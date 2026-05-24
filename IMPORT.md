@@ -1,21 +1,28 @@
-# Importing data into Meal Prep Planner
+# Importing into Meal Prep Planner
 
-The Settings → **Import JSON** flow accepts a single file matching the
-schema below. Importing **overwrites all current data** (ingredients,
-meals, week plan, targets, and shopping-list checks).
+The Settings → **Import JSON…** flow accepts a JSON file containing
+ingredients and meals and **merges them into your library**. Your meal
+slots, week plan, daily targets, display name and shared items are not
+touched. Importing is non-destructive: every imported item is given a
+fresh id, so re-importing the same file won't overwrite anything you
+already have.
 
-Hand this whole document to a chat (or to yourself) and ask for a JSON
-file that matches — paste the result into a `.json` file and import it.
+> To share a **week plan** (slots + assignments) between accounts, use
+> the in-app **Share** tab instead. JSON import is for seeding the
+> library with ingredients and meals only.
 
 There is a **Copy import prompt** button in the Settings modal that
-copies this document to your clipboard for exactly that purpose.
+copies this document to your clipboard. Hand it (whole) to a chat,
+describe the ingredients and meals you want, paste the JSON it returns
+into a `.json` file, then Import it.
 
 ---
 
 ## Schema
 
-The import expects a single JSON object matching this TypeScript shape
-exactly. Field names, casing, and types must match.
+The importer expects a single JSON object with `ingredients` and/or
+`meals` arrays. At least one of them must be non-empty. Anything else
+in the file (e.g. `week`, `slots`, `targets`) is ignored.
 
 ```ts
 type Unit = "g" | "ml" | "unit";
@@ -24,7 +31,7 @@ type IngredientCategory =
   | "Protein" | "Carbs" | "Produce" | "Dairy" | "Pantry" | "Other";
 
 interface Ingredient {
-  id: string;             // any unique string; UUID recommended
+  id: string;             // any unique string within this file (UUID recommended)
   name: string;
   unit: Unit;
   kcalPer100: number;     // per 100 g / 100 ml for "g"/"ml" units;
@@ -40,39 +47,27 @@ interface MealIngredient {
 }
 
 interface Meal {
-  id: string;
+  id: string;             // any unique string within this file
   name: string;
   servings: number;       // >= 1; nutrition is divided by this
   ingredients: MealIngredient[];
-  notes?: string;
+  notes?: string;         // optional prep notes
 }
 
-type DayKey  = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
-type SlotKey = "bridge" | "lunch" | "dinner";
-
-// All 7 days and all 3 slots must be present.
-type WeekPlan = {
-  [D in DayKey]: { [S in SlotKey]: string | null };  // meal.id or null
-};
-
-interface AppState {
-  ingredients: Ingredient[];
-  meals: Meal[];
-  week: WeekPlan;
-  targets: { kcal: number; protein: number };  // daily targets
-  shoppingChecked: string[];                    // ingredient ids ticked off
+interface ImportPayload {
+  ingredients?: Ingredient[];
+  meals?: Meal[];
 }
 ```
 
 ## Hard rules
 
-- Every `MealIngredient.ingredientId` must reference an existing
-  `Ingredient.id`.
-- Every non-null value in `week` must reference an existing `Meal.id`.
-- Any meal can be assigned to any slot — there is no longer a tag-based
-  filter.
-- `WeekPlan` must include all 7 days and all 3 slots; use `null` for
-  empty slots.
+- Every `MealIngredient.ingredientId` must reference an `Ingredient.id`
+  inside the same file (the importer remaps these ids to fresh ones at
+  import time).
+- IDs in the file must be unique within the file. They do **not** need
+  to match anything in the existing library — the importer always
+  assigns fresh ids.
 - Macros are **per 100** for `g`/`ml` ingredients, **per single item**
   for `unit` ingredients (e.g. an egg or a slice of bread).
 
@@ -97,24 +92,30 @@ interface AppState {
       ],
       "notes": "Pan-fry chicken, simmer rice."
     }
-  ],
-  "week": {
-    "mon": { "bridge": null, "lunch": "meal-chicken-rice", "dinner": null },
-    "tue": { "bridge": null, "lunch": null, "dinner": "meal-chicken-rice" },
-    "wed": { "bridge": null, "lunch": null, "dinner": null },
-    "thu": { "bridge": null, "lunch": null, "dinner": null },
-    "fri": { "bridge": null, "lunch": null, "dinner": null },
-    "sat": { "bridge": null, "lunch": null, "dinner": null },
-    "sun": { "bridge": null, "lunch": null, "dinner": null }
-  },
-  "targets": { "kcal": 2050, "protein": 140 },
-  "shoppingChecked": []
+  ]
 }
 ```
 
+## Ingredients-only / meals-only files
+
+Both arrays are optional, but at least one must be non-empty. A
+"recipes only" file:
+
+```json
+{ "meals": [ /* ... */ ] }
+```
+
+is fine, as long as every `ingredientId` it references also appears in
+an `ingredients` array in the same file. If the meals reference
+ingredients you've already added to your library, you'll need to
+include those ingredients in the file too — the importer doesn't
+match-by-name against your existing library.
+
 ## File details
 
-- Filename when exported: `mealprep-YYYY-MM-DD.json`
-- `localStorage` key: `mealprep:v1`
-- The import flow validates the top-level shape, normalises missing
-  optional fields, and then overwrites the current state on confirm.
+- Exports include the full app state (slots, week, targets, profile),
+  but the importer only reads the `ingredients` and `meals` arrays.
+  Use export for backups; use import for seeding new content.
+- Exported filename: `mealprep-YYYY-MM-DD.json`.
+- `localStorage` key: `mealprep:v2` (or `mealprep:v2:{uid}` when
+  signed in).

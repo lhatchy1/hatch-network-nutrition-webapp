@@ -16,6 +16,15 @@ users from the Firebase console. The Firebase console's "Enable create
 (sign-up)" toggle must be **off** to fully lock client-side account
 creation.
 
+**Live URL:** `https://food.hatchnetwork.ch/` (custom domain on GitHub
+Pages, project `lhatchy1/hatch-network-nutrition-webapp`).
+
+**Firebase project in production:** `hatch-food-planner` — a dedicated
+project for this app, segmented from the owner's other Firebase work.
+Auth method enabled: Email/Password only, with "Enable create (sign-up)"
+turned off. Firestore is in production mode with rules from
+[`firestore.rules`](./firestore.rules).
+
 ## Stack & key decisions
 
 | Concern | Choice | Why |
@@ -35,11 +44,12 @@ creation.
 ```
 index.html
   ├── #main-nav            (filled by main.ts on hashchange)
-  ├── #view                (the current view renders into here)
+  ├── #view                (the current view OR the sign-in form)
   └── #settings-dialog     (gear icon → openSettings)
 
 main.ts
   ├── initStore(Alpine)              ← creates Alpine.store("app")
+  ├── initAuth() + initSync()        ← only if isFirebaseConfigured()
   ├── Alpine.effect(renderCurrent)   ← re-renders the view whenever any
   │                                    tracked store field changes
   ├── hashchange → renderCurrent
@@ -47,10 +57,21 @@ main.ts
 
 src/state.ts                 src/store.ts
   load / save / validate       Alpine store + snapshot / replaceState
-  uid() / emptyWeek() / etc.   (snapshot strips Alpine proxies → JSON-safe)
+  setStorageScope(uid)         reseedStore() (used after sign-in/out)
+  setOnSave(hook)              snapshot strips Alpine proxies → JSON-safe
+  (signed-out / per-uid keys)
                                           │
 src/nutrition.ts  src/shopping.ts         ▼
   pure functions over AppState        getStore() in views
+
+  ┌─ src/firebase/ ────────────────────────────────────────────┐
+  │  config.ts   readEnv() + lazy initializeApp/getAuth/getDb  │
+  │  auth.ts     initAuth, onAuthChange, signIn, signOut       │
+  │  sync.ts     load/reconcile on sign-in, onSnapshot live    │
+  │              updates, mirror saves up via state.setOnSave  │
+  │  sharing.ts  shareIngredient/Meal/WeekPlan, listShared,    │
+  │              deleteShared (top-level shared_* collections) │
+  └────────────────────────────────────────────────────────────┘
 
                   ┌──────────────────────────────────────────┐
 Add-ingredient ──▶│ src/ui/foodSearchPanel.ts                │
@@ -68,6 +89,11 @@ The `Alpine.effect` in `main.ts` saves on every mutation (debounced) and
 re-renders the active view. Views render via the `html` tagged template
 in `src/ui/components.ts`, which escapes interpolations by default.
 
+When signed in, every persisted save also fires the `setOnSave` hook
+that `sync.ts` registers — that hook pushes the snapshot up to
+Firestore (with a `lastPushed` JSON cache so we don't echo our own
+remote updates back to the server).
+
 ## Conventions
 
 - **Always escape HTML.** Use `html\`<div>${value}</div>\`` from
@@ -83,6 +109,19 @@ in `src/ui/components.ts`, which escapes interpolations by default.
 - **Bundled docs via `?raw`.** `IMPORT.md` is imported by
   `views/settings.ts` as `?raw` so the in-app copy stays in lockstep
   with the repo doc — don't duplicate it as a TS constant.
+- **JSON import is library-only.** The `Import JSON…` flow merges
+  ingredients and meals into the library with fresh ids; it does
+  **not** transport slots, the week plan, targets or the profile.
+  Use the **Share** tab to move week plans (and meal/ingredient
+  packages) between accounts — sharing handles the dependency graph
+  and re-ids on adoption. `validateImport` + `mergeImport` live in
+  `state.ts`; widening the import payload requires updating
+  `IMPORT.md` too.
+- **Export is a full snapshot.** Even though import is library-only,
+  `Export JSON` serialises the entire `AppState` so users have a
+  proper backup file. If you ever wire up a "restore from backup"
+  flow, that's a different path from `Import JSON…` and should keep
+  the "overwrite all data" confirmation.
 
 ## Nutrition data (Open Food Facts)
 
@@ -117,33 +156,66 @@ into our six ingredient categories via `guessCategory`.
 | New view | Add `src/views/<name>.ts`, register in `ROUTES` in `main.ts`, add a link to the nav (auto-generated from `ROUTES`) |
 | Tweak default meal slots | `src/types.ts` (`DEFAULT_SLOTS`). Live slots are stored in `state.slots` and editable per-user from Settings. |
 | New ingredient category | `src/types.ts` (`INGREDIENT_CATEGORIES`) — listed categories drive the shopping-list grouping order. Also update `guessCategory` in `src/api/foodSearch.ts` so Open Food Facts hits map into it. |
-| Storage shape change | Bump key in `src/state.ts` (`STORAGE_KEY`) **and** bump `CACHE_VERSION` in `public/sw.js`. Update `validateImport` and `normalise`. Add the field to the `void s.foo` list in `main.ts` and to `snapshot()` / `replaceState()` / `reseedStore()` in `store.ts`. |
+| Storage shape change | Bump key in `src/state.ts` (`STORAGE_KEY`) **and** bump `CACHE_VERSION` in `public/sw.js`. Update `normalise`. Add the field to the `void s.foo` list in `main.ts` and to `snapshot()` / `replaceState()` / `reseedStore()` in `store.ts`. If the new field belongs in the JSON-import payload too, also update `validateImport` and `mergeImport` (and `IMPORT.md`). |
 | New shareable kind | Add to `ShareKind` in `src/firebase/sharing.ts`, define a `Shared*` interface, add a tab in `src/views/share.ts`, and update `firestore.rules`. |
 | Change custom domain | DNS `CNAME` at the registrar, `public/CNAME`, Settings → Pages → Custom domain, and `base` in `vite.config.ts` (`/` for a subdomain root, `/<subpath>/` if you ever subpath-serve again) |
 
 ## Auth + sync (Firebase)
 
-- Config in `src/firebase/config.ts` — pulls `VITE_FIREBASE_*` env vars.
-  When any of them are missing, `isFirebaseConfigured()` returns false
-  and the app silently runs in offline-only mode (no auth gate, no
-  Share tab). This keeps local dev usable without a `.env`.
+- Config in `src/firebase/config.ts` — pulls `VITE_FIREBASE_*` env vars
+  (`API_KEY`, `AUTH_DOMAIN`, `PROJECT_ID`, `APP_ID`). When any are
+  missing, `isFirebaseConfigured()` returns false and the app silently
+  runs in offline-only mode (no auth gate, no Share tab). This keeps
+  local dev usable without a `.env`.
 - Auth observer lives in `src/firebase/auth.ts`. `initAuth()` registers
   `onAuthStateChanged`; consumers subscribe via `onAuthChange()`.
 - Sync loop in `src/firebase/sync.ts`:
   1. On sign-in, switch the localStorage scope to `mealprep:v2:{uid}`.
   2. Read `/users/{uid}/state/main` from Firestore.
   3. If both local and remote have data and they differ, prompt the
-     user (push-local vs use-cloud).
-  4. Subscribe via `onSnapshot` so other devices receive live updates.
-  5. Mirror local saves up to Firestore (debounced by `state.save()`'s
+     user (push-local vs use-cloud) via `window.confirm`:
+     **OK = push local**, **Cancel/Esc = use cloud** (the safer
+     default for multi-device).
+  4. If the per-uid local cache is empty but the signed-out localStorage
+     scope has data (data the user entered before creating an account),
+     it gets surfaced as "local" in the reconcile step and the
+     signed-out scope is cleared once adopted.
+  5. Subscribe via `onSnapshot` so other devices receive live updates.
+  6. Mirror local saves up to Firestore (debounced by `state.save()`'s
      timer, then re-debounced via the `lastPushed` JSON cache to avoid
      re-pushing values we just received).
 - Sharing in `src/firebase/sharing.ts`: top-level `shared_ingredients`,
   `shared_meals`, `shared_plans` collections. Each doc is self-contained
   (a shared meal carries its ingredients; a shared plan carries its
   meals + ingredients) so importers don't need them pre-installed.
+  Importers re-id every nested entity locally so duplicate "Add to my
+  library" doesn't collide with an earlier copy.
 - Security rules at `firestore.rules` — copy/paste into Firebase
-  Console → Firestore Database → Rules.
+  Console → Firestore Database → Rules. There is no automated rules
+  deploy (no firebase-tools in CI); after editing the file, paste the
+  whole thing into the console and click Publish.
+
+### Firebase project setup (one-time, already done in production)
+
+Documented in detail in [`README.md`](./README.md). Summary for any
+future agent recreating the setup:
+
+1. Create a new Firebase project (e.g. `hatch-food-planner`).
+2. Authentication → Sign-in method → enable Email/Password (first
+   toggle only).
+3. Authentication → Settings → User actions → **untick "Enable create
+   (sign-up)"**. Without this, anyone with the public API key can
+   create accounts via the SDK.
+4. Authentication → Users → add accounts manually.
+5. Firestore Database → Create (production mode) → Rules tab →
+   paste `firestore.rules` → Publish.
+6. Project settings → register a web app → copy the four config values
+   into `.env` locally and into GitHub Actions secrets for production
+   (`VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`,
+   `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`).
+7. Authentication → Settings → Authorized domains → add
+   `food.hatchnetwork.ch`. Without this, sign-in on the live site
+   fails with `auth/unauthorized-domain`.
 
 ## Build / dev / deploy
 
@@ -166,6 +238,23 @@ bundle.
 
 ## Gotchas
 
+- **"Failed to read remote state … client is offline" is benign on
+  first sign-in.** Firestore's first `getDoc()` can resolve before the
+  WebSocket-style transport is up; we catch it and fall through to
+  `onSnapshot`, which retries automatically. For a brand-new user
+  there's no document to read anyway. Don't be tempted to convert it
+  into a hard error or a user-facing alert — it self-heals.
+- **Slot IDs are user-defined strings.** `DEFAULT_SLOTS` keeps the
+  literal IDs `bridge` / `lunch` / `dinner` purely so older saved
+  `WeekPlan` keys remain valid. New slots use `uid()` IDs. The
+  `WeekPlan` type is `Record<DayKey, Record<string, string | null>>`
+  — don't reintroduce a fixed-union `SlotKey` type.
+- **`mergeWeek` in `state.ts` drops slot keys not present in the
+  current `slots` list.** That's intentional — removing a slot from
+  Settings should also strip it from every day — but it means a
+  corrupted save where `slots` doesn't match `week` will silently
+  forget assignments. If you ever change slot id semantics, audit
+  this function.
 - **Barcode scanner is lazy-loaded.** `src/ui/barcodeScanner.ts` pulls in
   `@zxing/browser` (~114 KB gzipped). Import it via `await import("./barcodeScanner")`
   inside the click handler so the initial bundle stays slim — never
@@ -203,6 +292,15 @@ bundle.
 - **`Alpine.effect` re-runs on any tracked read.** The effect in
   `main.ts` reads every top-level store field to subscribe; if you add a
   new top-level field, add it to that `void s.foo` list.
+- **Don't commit `.env`.** It's gitignored. Production config lives in
+  GitHub Actions secrets and is baked into the bundle at build time by
+  the deploy workflow (`.github/workflows/deploy.yml`). If you change
+  the env-var names, update the workflow's `env:` block too.
+- **The Firebase web `apiKey` isn't a secret** in the security sense —
+  it's bundled into the published JS and visible to anyone. Real
+  security lives in (a) the disabled sign-up toggle, (b) Firestore
+  rules, and (c) the authorized-domains list. Treat the key like a
+  project identifier, not a credential.
 
 ## Branching & PRs
 
@@ -220,6 +318,13 @@ bundle.
   Replace the PNGs or edit the script.
 - Acceptance checklist in `spec.md` is unticked; tick after running
   through it on a real device.
+- Bundle size has grown with Firebase to ~143 KB gzipped for the main
+  chunk. Code-splitting Firebase Auth + Firestore out of the boot
+  path is a possible win; not pursued yet because cold-start sign-in
+  needs them immediately.
+- No password-reset / forgot-password UI. By design — accounts are
+  admin-provisioned, and the owner resets passwords in the Firebase
+  console. Add only if the user base outgrows that model.
 
 ## Where to find things
 
