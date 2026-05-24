@@ -25,8 +25,18 @@ const FORMATS = [
 ];
 
 export async function openBarcodeScanner(cb: ScannerCallbacks): Promise<void> {
+  // Secure-context check first — on iOS Safari, navigator.mediaDevices is
+  // undefined on plain HTTP, which used to surface as a generic "can't
+  // access" message. Be specific so the user knows it's an HTTPS issue,
+  // not a permissions one.
+  if (typeof window !== "undefined" && window.isSecureContext === false) {
+    cb.onError(
+      "Camera access needs HTTPS. Open this page at https:// (check that food.hatchnetwork.ch shows a padlock in the address bar).",
+    );
+    return;
+  }
   if (!navigator.mediaDevices?.getUserMedia) {
-    cb.onError("This browser can't access the camera.");
+    cb.onError("This browser doesn't support camera access.");
     return;
   }
 
