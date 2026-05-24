@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  base: "/hatch-network-nutrition-webapp/",
+  base: "/",
   build: {
     target: "es2022",
   },

@@ -72,16 +72,16 @@ in `src/ui/components.ts`, which escapes interpolations by default.
 | Task | Touch points |
 | --- | --- |
 | New view | Add `src/views/<name>.ts`, register in `ROUTES` in `main.ts`, add a link to the nav (auto-generated from `ROUTES`) |
-| New meal tag or slot | `src/types.ts` (`MealTag`, `MEAL_TAGS`, `SlotKey`, `SLOTS`, `SLOT_TAG` in `week.ts`) |
-| New ingredient category | `src/types.ts` (`INGREDIENT_CATEGORIES`) — listed categories drive the shopping-list grouping order |
+| New week slot | `src/types.ts` (`SlotKey`, `SLOTS`) |
+| New ingredient category | `src/types.ts` (`INGREDIENT_CATEGORIES`) — listed categories drive the shopping-list grouping order. Also update `guessCategory` in `src/api/foodSearch.ts` so Open Food Facts hits map into it. |
 | Storage shape change | Bump key in `src/state.ts` (`STORAGE_KEY`) **and** bump `CACHE_VERSION` in `public/sw.js`. Update `validateImport` and `normalise` |
-| Change Pages URL / repo name | `base` in `vite.config.ts`, `start_url` / `scope` in `public/manifest.webmanifest`, doc references in README/spec |
+| Change custom domain | DNS `CNAME` at the registrar, `public/CNAME`, Settings → Pages → Custom domain, and `base` in `vite.config.ts` (`/` for a subdomain root, `/<subpath>/` if you ever subpath-serve again) |
 
 ## Build / dev / deploy
 
 ```sh
 npm install
-npm run dev        # http://localhost:5173/hatch-network-nutrition-webapp/
+npm run dev        # http://localhost:5173/
 npm run build      # tsc --noEmit && vite build
 npm run preview    # serve dist/
 npm run typecheck  # tsc --noEmit only
@@ -94,10 +94,13 @@ Actions** set once before the first deploy can publish.
 
 ## Gotchas
 
-- **Pages subpath.** `vite.config.ts`'s `base` must equal `/<repo-name>/`.
-  Hash router survives any subpath; absolute asset URLs do not — always
-  reference via Vite (`import.meta.env.BASE_URL` or relative paths in
-  the manifest).
+- **Custom domain.** The site is served at `https://food.hatchnetwork.ch/`
+  via a DNS `CNAME` pointing the `food` subdomain at `lhatchy1.github.io`.
+  `public/CNAME` ships in the Pages artifact to persist the
+  Settings → Pages custom-domain value across deploys. `vite.config.ts`
+  uses `base: "/"` because the site is at the subdomain root, not a
+  subpath. If you ever move back to plain `<user>.github.io/<repo>/`,
+  flip `base` to `/<repo-name>/` and delete `public/CNAME`.
 - **`public/` vs root.** The service worker (`sw.js`) and manifest must
   be in `public/` so Vite copies them verbatim into `dist/` at the
   correct path. Source-tree imports for them won't work.

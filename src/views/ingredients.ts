@@ -3,6 +3,7 @@ import { uid } from "../state";
 import { INGREDIENT_CATEGORIES } from "../types";
 import type { Ingredient, IngredientCategory, Unit } from "../types";
 import { esc, html, raw, confirmAction } from "../ui/components";
+import { mountFoodSearchPanel } from "../ui/foodSearchPanel";
 
 type SortKey = keyof Pick<
   Ingredient,
@@ -15,6 +16,7 @@ interface ViewState {
   sort: SortKey;
   dir: 1 | -1;
   editingId: string | null;
+  searching: boolean;
 }
 
 const view: ViewState = {
@@ -23,6 +25,7 @@ const view: ViewState = {
   sort: "name",
   dir: 1,
   editingId: null,
+  searching: false,
 };
 
 const UNITS: Unit[] = ["g", "ml", "unit"];
@@ -44,8 +47,9 @@ export function renderIngredients(target: HTMLElement): void {
       <h2>Ingredients</h2>
       <button id="add-ing">+ Add ingredient</button>
     </div>
+    <div id="ing-search-panel"></div>
     <div class="row" style="margin-bottom: 0.5rem">
-      <input type="search" id="ing-search" class="grow" placeholder="Search…" value="${view.query}" />
+      <input type="search" id="ing-search" class="grow" placeholder="Filter your list…" value="${view.query}" />
       <select id="ing-cat">
         <option value="">All categories</option>
         ${raw(
@@ -57,6 +61,51 @@ export function renderIngredients(target: HTMLElement): void {
     </div>
     ${raw(renderTable(filtered))}
   `;
+
+  if (view.searching) {
+    const panel = target.querySelector<HTMLElement>("#ing-search-panel")!;
+    mountFoodSearchPanel(panel, {
+      placeholder: "Search foods to auto-fill macros…",
+      manualLabel: "Add manually instead",
+      onCancel: () => {
+        view.searching = false;
+        renderIngredients(target);
+      },
+      onPick: (hit) => {
+        const store = getStore();
+        if (hit) {
+          const fresh: Ingredient = {
+            id: uid(),
+            name: hit.brand ? `${hit.name} (${hit.brand})` : hit.name,
+            unit: "g",
+            kcalPer100: hit.kcalPer100,
+            proteinPer100: hit.proteinPer100,
+            carbsPer100: hit.carbsPer100,
+            fatPer100: hit.fatPer100,
+            category: hit.category,
+          };
+          store.ingredients.push(fresh);
+          view.searching = false;
+          view.editingId = null;
+        } else {
+          const fresh: Ingredient = {
+            id: uid(),
+            name: "New ingredient",
+            unit: "g",
+            kcalPer100: 0,
+            proteinPer100: 0,
+            carbsPer100: 0,
+            fatPer100: 0,
+            category: "Other",
+          };
+          store.ingredients.push(fresh);
+          view.searching = false;
+          view.editingId = fresh.id;
+        }
+        renderIngredients(target);
+      },
+    });
+  }
 
   wire(target);
 }
@@ -146,18 +195,7 @@ function wire(root: HTMLElement): void {
   const store = getStore();
 
   root.querySelector("#add-ing")?.addEventListener("click", () => {
-    const fresh: Ingredient = {
-      id: uid(),
-      name: "New ingredient",
-      unit: "g",
-      kcalPer100: 0,
-      proteinPer100: 0,
-      carbsPer100: 0,
-      fatPer100: 0,
-      category: "Other",
-    };
-    store.ingredients.push(fresh);
-    view.editingId = fresh.id;
+    view.searching = !view.searching;
     renderIngredients(root);
   });
 

@@ -18,7 +18,9 @@ A lightweight, single-user web app for planning weekly meals, tracking nutrition
 
 - No user accounts, auth, or multi-user support
 - No backend, database, or cloud sync (export/import covers this)
-- No recipe scraping, barcode scanning, or external nutrition APIs (manual entry only, for now)
+- No recipe scraping or barcode scanning
+- Nutrition lookups use the public Open Food Facts API (no API key, runs
+  client-side); manual entry remains for custom items
 - No calorie tracking against actual consumption — this is a *planning* tool, not a food diary
 
 ## Stack
@@ -28,7 +30,7 @@ A lightweight, single-user web app for planning weekly meals, tracking nutrition
 - **Pico.css** for default styling (classless, built-in dark mode, ~10 KB gzipped)
 - **localStorage** for persistence
 - **PWA**: web manifest + service worker for offline + installable
-- **Deploy**: GitHub Pages via GitHub Actions (`actions/deploy-pages@v4`); main triggers a build & deploy. Vite `base` is `/hatch-network-nutrition-webapp/` to match the repo subpath.
+- **Deploy**: GitHub Pages via GitHub Actions (`actions/deploy-pages@v4`); main triggers a build & deploy. Served from the custom domain `food.hatchnetwork.ch` via a DNS `CNAME` → `lhatchy1.github.io`; `public/CNAME` ships in the artifact and Vite `base` is `/`.
 - No hard bundle-size budget — favour clarity and small deps, but no obsessive byte-counting
 
 ## Data model
@@ -55,7 +57,6 @@ interface Meal {
   name: string;
   servings: number;           // recipe yields this many servings
   ingredients: MealIngredient[];
-  tags: ("lunch" | "dinner" | "bridge" | "snack")[];
   notes?: string;             // optional prep notes
 }
 
@@ -92,16 +93,21 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 ### 1. Ingredients
 
 - Table: name, unit, kcal/100, protein/100, carbs/100, fat/100, category
-- Add / edit / delete rows inline or via a small modal
-- Search/filter by name and category
+- Add via **Open Food Facts** search — typing a name shows live matches
+  with macros that can be added in one click. Manual entry remains as a
+  fallback for custom items.
+- Edit / delete rows inline
+- Filter your list by name and category
 - Sort by any column
 
 ### 2. Meals
 
-- List view: meal name, tags, kcal/serving, protein/serving
+- List view: meal name, kcal/serving, protein/serving
 - Detail/edit view:
-  - Name, servings, tags, notes
-  - Add ingredients: pick from ingredient library + enter amount
+  - Name, servings, notes
+  - Add ingredients: pick from the library, or use **+ Search foods** to
+    look up a new ingredient and attach it in one step (defaults to 100 g
+    — adjust after)
   - Live-calculated nutrition per serving
 - “Duplicate meal” button (handy for variants)
 - Delete with confirmation
@@ -109,7 +115,7 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 ### 3. Week
 
 - Grid: 7 columns (Mon–Sun), 3 rows (bridge, lunch, dinner)
-- Each cell: dropdown of meals (filtered by tag) or "empty"
+- Each cell: dropdown of every meal in the library, or "empty"
 - Per-day totals row at bottom: kcal, protein
 - Weekly average row, with colour-coded deficit/surplus vs target
 - "Clear week" action
@@ -176,13 +182,16 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 │   └── icons/                     # icon-192.png, icon-512.png, icon.svg
 └── src/
     ├── main.ts                    # entry, hash router, Alpine init, SW register
-    ├── types.ts                   # all shared TS types + day/slot/tag/category enums
+    ├── types.ts                   # all shared TS types + day/slot/category enums
     ├── state.ts                   # load/save/validate/uid helpers
     ├── store.ts                   # Alpine store + snapshot/replaceState
     ├── nutrition.ts               # mealNutrition, dayTotals, weekAverages
     ├── shopping.ts                # aggregate + smart unit format + markdown
+    ├── api/
+    │   └── foodSearch.ts          # Open Food Facts wrapper (search → FoodHit[])
     ├── ui/
     │   ├── components.ts          # esc/html tagged template, confirmAction
+    │   ├── foodSearchPanel.ts     # shared search-and-pick panel
     │   └── styles.css             # layout on top of Pico
     └── views/
         ├── ingredients.ts
