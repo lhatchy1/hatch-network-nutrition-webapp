@@ -385,6 +385,24 @@ bundle.
   true })` either — an inner click consumes the listener, and you lose
   backdrop-to-close after that. Use a `dialog.dataset.backdropBound`
   guard to bind once (see `mealPicker.ts` / `settings.ts`).
+- **Filter inputs that trigger a full view re-render must restore
+  focus.** `ingredients.ts` and `meals.ts` both call their root
+  `render*()` from the search input's `input` handler, which replaces
+  the input element in the DOM and drops the caret. The handlers
+  capture `selectionStart` before re-render, then refocus the fresh
+  input and call `setSelectionRange()` — match that pattern for any
+  new filter input that re-renders its own container, or split the
+  list update out of the parent re-render.
+- **Cloud sync has a 60 s polling fallback.** `sync.ts` subscribes
+  via `onSnapshot` for live remote updates, but onSnapshot can
+  silently stall (mobile background tabs, flaky transports). The
+  active `SyncState` carries a `setInterval` that re-runs
+  `syncNow()` every minute, and Settings → Account exposes a manual
+  `↻ Sync now` button that flushes the debounced local save and
+  re-pulls the remote. If you add new top-level state fields, make
+  sure they round-trip through `snapshot()` / `normalise()` so the
+  sync echo-suppression key (`lastPushed`) matches what comes back
+  via `onSnapshot`.
 - **Mobile chrome and desktop nav both ship every page.** `index.html`
   has both `.nav` (desktop) and `.mtop` + `.mtabs` (mobile); CSS hides
   the inactive set at 920 px. The Week view also renders both the
@@ -506,6 +524,7 @@ re-reading the conversation history.
 | Open Food Facts integration | `src/api/foodSearch.ts` (search + barcode lookup) |
 | Food-search UI (shared) | `src/ui/foodSearchPanel.ts` |
 | Meal picker dialog | `src/ui/mealPicker.ts` |
+| Replace-ingredient dialog | `src/ui/replaceDialog.ts` (wired from Shopping) |
 | Barcode camera scanner | `src/ui/barcodeScanner.ts` (lazy-loaded) |
 | PWA shell + custom domain | `public/manifest.webmanifest`, `public/sw.js`, `public/CNAME` |
 | HTTPS bounce / app shell + dialog mounts | `index.html` |

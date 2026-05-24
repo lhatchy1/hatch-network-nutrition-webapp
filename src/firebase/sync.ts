@@ -14,6 +14,7 @@ import {
   load,
   loadFromScope,
   clearSignedOutScope,
+  flushSave,
 } from "../state";
 import { snapshot, getStore, reseedStore } from "../store";
 import { onAuthChange } from "./auth";
@@ -23,9 +24,40 @@ interface SyncState {
   unsubscribe: Unsubscribe;
   applyingRemote: boolean;
   lastPushed: string;
+  ref: ReturnType<typeof userDocRef>;
+  pollHandle: ReturnType<typeof setInterval> | null;
+  lastSyncedAt: number;
 }
 
+// How often to re-poll the remote as a fallback when onSnapshot misses
+// updates (e.g. transport stalls, mobile background tab waking).
+const POLL_INTERVAL_MS = 60_000;
+
 let active: SyncState | null = null;
+const lastSyncListeners = new Set<() => void>();
+
+export function onSyncStatusChange(cb: () => void): () => void {
+  lastSyncListeners.add(cb);
+  return () => lastSyncListeners.delete(cb);
+}
+
+function emitSyncStatus(): void {
+  for (const cb of lastSyncListeners) {
+    try {
+      cb();
+    } catch (err) {
+      console.warn("sync status listener failed", err);
+    }
+  }
+}
+
+export function getLastSyncedAt(): number | null {
+  return active ? active.lastSyncedAt : null;
+}
+
+export function isSyncActive(): boolean {
+  return active !== null;
+}
 let onReconcileNeeded: ((opts: ReconcileOptions) => Promise<ReconcileChoice>) | null = null;
 let renderHook: (() => void) | null = null;
 
@@ -57,7 +89,9 @@ export function initSync(): void {
   onAuthChange(async (user) => {
     if (active) {
       active.unsubscribe();
+      if (active.pollHandle) clearInterval(active.pollHandle);
       active = null;
+      emitSyncStatus();
     }
     setOnSave(null);
 
@@ -142,7 +176,14 @@ export function initSync(): void {
       const data = snap.data() as { state?: unknown };
       if (!data?.state) return;
       const next = normalise(data.state);
-      if (active && sameState(snapshot(getStore()), next)) return;
+      if (active && sameState(snapshot(getStore()), next)) {
+        // Even an echo counts as confirmation we're in sync.
+        if (active) {
+          active.lastSyncedAt = Date.now();
+          emitSyncStatus();
+        }
+        return;
+      }
       if (active) {
         // Mark lastPushed before the reseed so the Alpine-effect save that
         // follows doesn't re-push the value we just received.
@@ -151,7 +192,11 @@ export function initSync(): void {
       }
       reseedStore(next);
       renderHook?.();
-      if (active) active.applyingRemote = false;
+      if (active) {
+        active.applyingRemote = false;
+        active.lastSyncedAt = Date.now();
+        emitSyncStatus();
+      }
     });
 
     active = {
@@ -159,7 +204,18 @@ export function initSync(): void {
       unsubscribe,
       applyingRemote: false,
       lastPushed: JSON.stringify(chosen),
+      ref,
+      pollHandle: null,
+      lastSyncedAt: Date.now(),
     };
+
+    // Fallback poll: real-time onSnapshot occasionally misses events when
+    // the transport stalls (mobile tabs waking, flaky networks). Re-pull
+    // every minute so devices reconverge without a manual sync.
+    active.pollHandle = setInterval(() => {
+      syncNow().catch((err) => console.warn("Periodic sync failed", err));
+    }, POLL_INTERVAL_MS);
+    emitSyncStatus();
 
     // Mirror every local save up to Firestore.
     setOnSave((state) => {
@@ -182,6 +238,44 @@ async function pushNow(
 ): Promise<void> {
   if (!ref) return;
   await setDoc(ref, { state, updatedAt: Date.now() }, { merge: true });
+}
+
+// Manual / periodic sync trigger. Flushes any debounced local save up to
+// Firestore first, then re-reads the remote and applies it. Returns true
+// on success, throws on failure so the caller can show an error.
+export async function syncNow(): Promise<boolean> {
+  if (!active) return false;
+  const ref = active.ref;
+  if (!ref) return false;
+
+  // Force any debounced local save out the door so we don't race the
+  // remote read with a half-pending write.
+  flushSave(snapshot(getStore()));
+
+  const remoteSnap = await getDoc(ref);
+  if (!remoteSnap.exists()) {
+    active.lastSyncedAt = Date.now();
+    emitSyncStatus();
+    return true;
+  }
+  const data = remoteSnap.data() as { state?: unknown };
+  if (!data?.state) {
+    active.lastSyncedAt = Date.now();
+    emitSyncStatus();
+    return true;
+  }
+  const next = normalise(data.state);
+  const current = snapshot(getStore());
+  if (!sameState(current, next)) {
+    active.lastPushed = JSON.stringify(next);
+    active.applyingRemote = true;
+    reseedStore(next);
+    active.applyingRemote = false;
+    renderHook?.();
+  }
+  active.lastSyncedAt = Date.now();
+  emitSyncStatus();
+  return true;
 }
 
 function isEmptyState(s: AppState): boolean {

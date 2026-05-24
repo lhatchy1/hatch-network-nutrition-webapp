@@ -828,11 +828,25 @@ main { padding-bottom: var(--mtabs-h); }
   padding: 4px 14px; margin: 0 14px 6px;
 }
 .cat-group .item {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 8px;
   padding: 9px 0; border-bottom: 1px solid var(--rule);
-  cursor: pointer;
 }
 .cat-group .item:last-child { border-bottom: 0; }
+.cat-group .item > .check {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 12px;
+  cursor: pointer;
+}
+.cat-group .item > .replace {
+  flex: 0 0 auto;
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--ink-3); font-size: 16px; line-height: 1;
+  width: 28px; height: 28px; padding: 0;
+  border-radius: 50%;
+  font-family: inherit;
+  display: grid; place-items: center;
+}
+.cat-group .item > .replace:hover { color: var(--accent); background: var(--bg-soft); }
 .cat-group .item .ck {
   width: 20px; height: 20px; border-radius: 50%;
   border: 1.5px solid var(--rule-strong);
@@ -1150,6 +1164,66 @@ dialog.meal-picker .footer {
   margin-top: auto;
 }
 dialog.meal-picker .footer .btn { flex: 1; }
+
+/* =====================================================================
+ * Replace-ingredient dialog (shopping list "↺")
+ * Mirrors the meal picker bottom-sheet shape and uses the shared
+ * food-search panel inside. Custom display rules are scoped to
+ * dialog.replace-dialog[open] so the closed dialog stays hidden under
+ * Pico classless's dialog defaults.
+ * ===================================================================== */
+dialog.replace-dialog {
+  width: 100%; max-width: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  margin: 0;
+  inset: 0;
+  max-height: 100vh;
+  color: var(--ink);
+}
+dialog.replace-dialog::backdrop { background: rgba(0,0,0,0.34); }
+dialog.replace-dialog .sheet {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: var(--bg);
+  border-radius: 24px 24px 0 0;
+  padding: 14px 14px 16px;
+  max-height: 78vh;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+}
+@media (min-width: 920px) {
+  dialog.replace-dialog[open] .sheet {
+    position: static;
+    margin: 0 auto;
+    max-width: 460px;
+    max-height: 78vh;
+    border-radius: var(--r-xl);
+  }
+  dialog.replace-dialog[open] { display: grid; place-items: center; }
+}
+dialog.replace-dialog .grab {
+  width: 36px; height: 4px; border-radius: 2px;
+  background: var(--rule-strong);
+  margin: 0 auto 12px;
+}
+dialog.replace-dialog .hd {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 0 4px 10px; gap: 12px;
+}
+dialog.replace-dialog .hd h3 {
+  font-size: 20px; font-weight: 600; margin: 0;
+}
+dialog.replace-dialog .hd .sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px; color: var(--ink-2);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  text-align: right; min-width: 0;
+}
+/* The shared food-search panel ships with side margins for the
+ * Ingredients view; inside the sheet we want it edge-to-edge. */
+dialog.replace-dialog .food-search { margin: 0; }
 
 /* =====================================================================
  * Auth gate (sign-in form)

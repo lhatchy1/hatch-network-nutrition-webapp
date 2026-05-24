@@ -201,8 +201,23 @@ function wire(root: HTMLElement): void {
   });
 
   root.querySelector("#ing-search")?.addEventListener("input", (e) => {
-    view.query = (e.target as HTMLInputElement).value;
+    const t = e.target as HTMLInputElement;
+    const caret = t.selectionStart;
+    view.query = t.value;
     renderIngredients(root);
+    // Re-render replaces the input; restore focus + caret so typing
+    // doesn't drop the cursor between keystrokes.
+    const fresh = root.querySelector<HTMLInputElement>("#ing-search");
+    if (fresh) {
+      fresh.focus();
+      if (caret !== null) {
+        try {
+          fresh.setSelectionRange(caret, caret);
+        } catch {
+          /* setSelectionRange is unsupported on some input types */
+        }
+      }
+    }
   });
 
   root.querySelectorAll<HTMLButtonElement>("[data-cat]").forEach((btn) => {
