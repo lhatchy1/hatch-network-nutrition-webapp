@@ -142,8 +142,17 @@ button { font-family: inherit; }
 a { color: inherit; }
 .nav a, .mtabs a, .pill, .tab, .ingr-row, .meal-row { text-decoration: none; }
 
-/* Allow native dialogs to overlay above any sticky/fixed app chrome. */
-dialog { color: var(--ink); }
+/* Native dialogs:
+   1. Pico's classless rules style `dialog` with a viewport-covering
+      backdrop-filter and an overlay background. We don't want that
+      because our dialogs handle their own backdrop via ::backdrop.
+   2. Pico already ships `dialog:not([open]) { display: none }`, but
+      restate it here at a more specific selector so any custom
+      `dialog.foo { display: ... }` overrides further down can't
+      accidentally show a closed dialog (this hit Waterfox + Edge on
+      the meal-picker desktop override before this restatement). */
+dialog { color: var(--ink); background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
+dialog:not([open]) { display: none !important; }
 
 /* =====================================================================
  * Status helpers
@@ -1038,14 +1047,14 @@ dialog.meal-picker .sheet {
   overflow-y: auto;
 }
 @media (min-width: 920px) {
-  dialog.meal-picker .sheet {
+  dialog.meal-picker[open] .sheet {
     position: static;
     margin: 0 auto;
     max-width: 460px;
     max-height: 78vh;
     border-radius: var(--r-xl);
   }
-  dialog.meal-picker { display: grid; place-items: center; }
+  dialog.meal-picker[open] { display: grid; place-items: center; }
 }
 dialog.meal-picker .grab {
   width: 36px; height: 4px; border-radius: 2px;
