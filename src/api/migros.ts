@@ -71,9 +71,15 @@ export async function lookupMigrosProduct(
   const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
 
   try {
+    // Send as a "simple" CORS request — no Content-Type / Accept
+    // headers — so the browser doesn't fire an OPTIONS preflight.
+    // corsproxy.io's free tier rejects preflights with HTTP 403 from
+    // non-localhost origins, but lets simple POSTs straight through.
+    // The body still serialises as text/plain;charset=UTF-8 (a
+    // CORS-safe default), and Migros' product-display endpoint
+    // doesn't require application/json when the body is empty.
     const res = await fetch(proxied, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: "{}",
       signal: ctrl.signal,
     });
