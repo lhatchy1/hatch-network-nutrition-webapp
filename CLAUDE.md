@@ -187,6 +187,12 @@ Ingredients can be added in four ways, ordered by speed-to-value:
 1. **Barcode scan** — opens the device camera, decodes an EAN-13 / EAN-8
    / UPC-A / UPC-E barcode via `@zxing/browser`, then hits OFF's
    `/api/v2/product/<barcode>.json`. Best for packaged products.
+2. **Text search OR typed barcode** — debounced query against OFF's
+   legacy free-text endpoint
+   `/cgi/search.pl?search_terms=…&search_simple=1&action=process&json=1`.
+   The same input also detects a pure-digit query of 8–14 chars and
+   routes it through the product endpoint instead, so typing or
+   pasting a barcode does the right thing without a separate UI.
 2. **Paste a Migros product URL** — anything matching
    `migros.ch/<locale>/product/<id>` is detected in the search input by
    `extractMigrosProductId()` and routed to `src/api/migros.ts`, which
@@ -407,8 +413,27 @@ bundle.
   Pico sets a background image and a matching `padding-inline-start`
   to reserve space for it. `src/ui/styles.css` clears both so app-
   level inline padding doesn't sit on top of the icon — the design
-  uses plain inputs without icons. If you want the icon back, undo
-  that reset in CSS rather than per-input.
+  uses plain inputs without icons. The trap: Pico's selector is
+  `:not([type=checkbox],[type=radio],[type=range],[type=file])[type=search]`
+  (specificity 0,2,0), so a naive `input[type="search"]` reset
+  (0,1,1) loses the cascade and the icon still paints on any input
+  without a `.search-card` wrapper. Match Pico's selector shape with
+  a `:not(...)` chain so the reset actually wins. If you want the
+  icon back, undo that reset in CSS rather than per-input.
+- **Open Food Facts rate-limits per IP and the 429 is CORS-stripped.**
+  OFF's read API caps at ~10 search req/min and ~100 product req/min
+  per IP, and their 429 response ships without `Access-Control-Allow-Origin`,
+  so the browser hands `fetch()` a generic TypeError indistinguishable
+  from a network drop. The food client (`src/api/foodSearch.ts`)
+  defends in depth: an in-memory URL cache (64 entries, 10 min TTL),
+  a 500 ms typing debounce in the panel, 2 attempts with a flat
+  1.5 s backoff (faster retries inside the same rate-limit window
+  only make it worse), and a `wasRecentlyRateLimited()` heuristic
+  driven by consecutive-failure count so the panel can show "OFF is
+  rate-limiting this device — wait a few seconds" instead of the
+  generic "couldn't reach" copy. There's no in-browser way to set
+  `User-Agent` to identify the app to OFF; a backend proxy is the
+  only proper fix, and not currently deployed.
 - **Circular icon buttons need `padding: 0; line-height: 1`.** Pico's
   default `button { padding: 0.75rem 1rem }` is asymmetric, and with
   a fixed `width`/`height` + `box-sizing: border-box` it squishes the
