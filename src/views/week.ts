@@ -1,7 +1,7 @@
 import { getStore } from "../store";
 import { DAYS } from "../types";
 import type { DayKey } from "../types";
-import { dayTotals, fmtMacro, mealNutrition } from "../nutrition";
+import { dayTotals, fmtMacro, mealNutrition, weekAverages } from "../nutrition";
 import { emptyWeek } from "../state";
 import { esc, html, raw, confirmAction } from "../ui/components";
 import { shareWeekPlan, isSignedIn } from "../firebase/sharing";
@@ -50,18 +50,36 @@ export function renderWeek(target: HTMLElement): void {
     0,
   );
 
+  const avg = weekAverages(store);
+  const avgKcalKey = status("kcal", avg.kcal, t.kcal);
+  const avgProtKey = status("protein", avg.protein, t.protein);
+  const monday = mondayOf(new Date());
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmtDate = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const weekRange = `${fmtDate(monday)} → ${fmtDate(sunday)}`;
+
   target.innerHTML = html`
-    <div class="page-h">
+    <header class="page-h">
       <div>
         <span class="eyebrow">This week</span>
-        <h1>${esc(longDayName(todayLabel))}</h1>
+        <h1 class="page-h-title-mobile">${esc(longDayName(todayLabel))}</h1>
+        <div class="page-h-title-desktop">
+          <h1>${esc(weekRange)}</h1>
+          <div class="week-stats">
+            <span><b class="v-${avgKcalKey}">${formatInt(avg.kcal)}</b><em>kcal avg</em></span>
+            <span><b class="v-${avgProtKey}">${formatInt(avg.protein)}g</b><em>protein</em></span>
+            <span><b>${formatInt(avg.carbs)}g</b><em>carbs</em></span>
+            <span><b>${formatInt(avg.fat)}g</b><em>fat</em></span>
+          </div>
+        </div>
       </div>
       <div class="row" style="gap: 6px;">
         <button class="btn" id="share-week">Share week</button>
         <button class="btn ghost" id="dup-week">Duplicate previous</button>
         <button class="btn danger" id="clear-week">Clear week</button>
       </div>
-    </div>
+    </header>
 
     ${raw(renderDaystrip(totalsByDay, t))}
     ${raw(renderTodayCard(today, todayLabel, filledCount, todayTotals, t))}
