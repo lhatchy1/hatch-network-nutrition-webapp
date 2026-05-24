@@ -18,7 +18,7 @@ A lightweight, single-user web app for planning weekly meals, tracking nutrition
 
 - No user accounts, auth, or multi-user support
 - No backend, database, or cloud sync (export/import covers this)
-- No recipe scraping or barcode scanning
+- No recipe scraping
 - Nutrition lookups use the public Open Food Facts API (no API key, runs
   client-side); barcode scan is camera-based via `@zxing/browser` (lazy-loaded
   ~114 KB gzipped); manual entry remains for custom items
@@ -174,12 +174,13 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 ├── spec.md                        # this file
 ├── CLAUDE.md                      # developer / agent handbook
 ├── index.html                     # app shell, mounts #view + settings dialog
-├── vite.config.ts                 # base path = /<repo-name>/
+├── vite.config.ts                 # base = "/" (subdomain root)
 ├── tsconfig.json
 ├── package.json
 ├── scripts/
 │   └── generate-icons.mjs         # pure-Node PNG generator for PWA icons
 ├── public/                        # copied verbatim into dist/ root
+│   ├── CNAME                      # food.hatchnetwork.ch (persists Pages custom domain)
 │   ├── manifest.webmanifest
 │   ├── sw.js                      # versioned cache, stale-while-revalidate
 │   └── icons/                     # icon-192.png, icon-512.png, icon.svg

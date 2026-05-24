@@ -8,6 +8,21 @@
     <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
     <title>Meal Prep Planner</title>
+    <script>
+      // Force HTTPS so secure-context APIs (getUserMedia for the barcode
+      // scanner, etc.) work. GitHub Pages handles this server-side when
+      // "Enforce HTTPS" is on, but a bookmarked http:// URL or a stale SW
+      // can still serve over plain HTTP — bounce up before anything loads.
+      if (
+        location.protocol === "http:" &&
+        location.hostname !== "localhost" &&
+        location.hostname !== "127.0.0.1"
+      ) {
+        location.replace(
+          "https://" + location.host + location.pathname + location.search + location.hash,
+        );
+      }
+    </script>
   </head>
   <body>
     <header class="container">
