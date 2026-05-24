@@ -2,7 +2,7 @@
 // editor. Renders a search input + results list, debounces network calls, and
 // calls back with a chosen FoodHit (or null when "Add manually" is clicked).
 
-import { searchFoods } from "../api/foodSearch";
+import { lookupBarcode, searchFoods } from "../api/foodSearch";
 import type { FoodHit } from "../api/foodSearch";
 import { esc, html, raw } from "./components";
 
@@ -29,10 +29,11 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
           autocomplete="off"
           placeholder="${opts.placeholder ?? "Search foods (e.g. chicken breast)…"}"
         />
+        <button data-food-scan title="Scan barcode">📷 Scan</button>
         <button class="outline secondary" data-food-cancel>Cancel</button>
       </div>
       <p class="muted food-status" data-food-status>
-        <small>Type at least 2 letters. Powered by Open Food Facts.</small>
+        <small>Scan a barcode, or type at least 2 letters. Powered by Open Food Facts.</small>
       </p>
       <div class="food-results" data-food-results></div>
       ${raw(
@@ -48,6 +49,7 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
   const status = container.querySelector<HTMLElement>("[data-food-status]")!;
   const manual = container.querySelector<HTMLButtonElement>("[data-food-manual]");
   const cancel = container.querySelector<HTMLButtonElement>("[data-food-cancel]")!;
+  const scanBtn = container.querySelector<HTMLButtonElement>("[data-food-scan]")!;
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let inflight: AbortController | null = null;
@@ -117,6 +119,49 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
 
   manual?.addEventListener("click", () => opts.onPick(null));
   cancel.addEventListener("click", () => opts.onCancel?.());
+
+  scanBtn.addEventListener("click", async () => {
+    // The ZXing-based scanner is ~140 KB gzipped — load it on demand so
+    // the initial bundle stays slim for users who never scan.
+    setStatus("Loading scanner…");
+    scanBtn.disabled = true;
+    try {
+      const { openBarcodeScanner } = await import("./barcodeScanner");
+      setStatus("Scan a barcode, or type at least 2 letters. Powered by Open Food Facts.");
+      openBarcodeScanner({
+        onResult: async (code) => {
+          setStatus(`Looking up barcode ${code}…`);
+          // Bump the seq so any in-flight text-search response is ignored
+          // and can't paint over the barcode result below.
+          const mySeq = ++requestSeq;
+          try {
+            const hit = await lookupBarcode(code);
+            if (mySeq !== requestSeq) return;
+            if (hit) {
+              opts.onPick(hit);
+            } else {
+              setStatus(
+                `Barcode ${code} isn't in Open Food Facts. Try a text search or add manually.`,
+              );
+            }
+          } catch (err) {
+            if (mySeq !== requestSeq) return;
+            console.error(err);
+            setStatus("Couldn't reach Open Food Facts. Check your connection and try again.");
+          }
+        },
+        onCancel: () => {
+          // Scanner closed without a result — leave the panel intact.
+        },
+        onError: (msg) => setStatus(msg),
+      });
+    } catch (err) {
+      console.error(err);
+      setStatus("Couldn't load the barcode scanner.");
+    } finally {
+      scanBtn.disabled = false;
+    }
+  });
 
   // Autofocus so the user can start typing immediately.
   queueMicrotask(() => input.focus());

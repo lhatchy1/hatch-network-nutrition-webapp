@@ -20,7 +20,8 @@ A lightweight, single-user web app for planning weekly meals, tracking nutrition
 - No backend, database, or cloud sync (export/import covers this)
 - No recipe scraping or barcode scanning
 - Nutrition lookups use the public Open Food Facts API (no API key, runs
-  client-side); manual entry remains for custom items
+  client-side); barcode scan is camera-based via `@zxing/browser` (lazy-loaded
+  ~114 KB gzipped); manual entry remains for custom items
 - No calorie tracking against actual consumption — this is a *planning* tool, not a food diary
 
 ## Stack
@@ -93,9 +94,11 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 ### 1. Ingredients
 
 - Table: name, unit, kcal/100, protein/100, carbs/100, fat/100, category
-- Add via **Open Food Facts** search — typing a name shows live matches
-  with macros that can be added in one click. Manual entry remains as a
-  fallback for custom items.
+- Add via **Open Food Facts**:
+  - **Scan** a barcode with the device camera (EAN-13 / EAN-8 / UPC-A /
+    UPC-E) — the scanner is code-split and only loads on demand
+  - or type a name and pick from live matches
+  - or fall back to manual entry for custom items
 - Edit / delete rows inline
 - Filter your list by name and category
 - Sort by any column
@@ -188,10 +191,11 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
     ├── nutrition.ts               # mealNutrition, dayTotals, weekAverages
     ├── shopping.ts                # aggregate + smart unit format + markdown
     ├── api/
-    │   └── foodSearch.ts          # Open Food Facts wrapper (search → FoodHit[])
+    │   └── foodSearch.ts          # Open Food Facts wrapper (search + barcode → FoodHit)
     ├── ui/
     │   ├── components.ts          # esc/html tagged template, confirmAction
     │   ├── foodSearchPanel.ts     # shared search-and-pick panel
+    │   ├── barcodeScanner.ts      # camera modal + ZXing (loaded on demand)
     │   └── styles.css             # layout on top of Pico
     └── views/
         ├── ingredients.ts
