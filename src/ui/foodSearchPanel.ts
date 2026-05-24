@@ -2,7 +2,7 @@
 // editor. Renders a search input + results list, debounces network calls, and
 // calls back with a chosen FoodHit (or null when "Add manually" is clicked).
 
-import { lookupBarcode, searchFoods } from "../api/foodSearch";
+import { lookupBarcode, searchFoods, wasRecentlyRateLimited } from "../api/foodSearch";
 import type { FoodHit } from "../api/foodSearch";
 import { esc, html, raw } from "./components";
 
@@ -18,7 +18,16 @@ export interface PanelOptions {
   autoOpenScanner?: boolean;
 }
 
-const DEBOUNCE_MS = 300;
+// 500 ms keeps OFF from seeing a request per keystroke. Open Food
+// Facts rate-limits the public API hard (and strips CORS from the
+// 429), so easing off is more reliable than retrying through it.
+const DEBOUNCE_MS = 500;
+
+function networkErrorStatus(): string {
+  return wasRecentlyRateLimited()
+    ? "Open Food Facts is rate-limiting this device. Wait a few seconds and try again."
+    : "Couldn't reach Open Food Facts. Check your connection and try again.";
+}
 
 export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions): void {
   container.innerHTML = html`
@@ -100,7 +109,7 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
       } catch (err) {
         if (mySeq !== requestSeq) return;
         console.error(err);
-        setStatus("Couldn't reach Open Food Facts. Check your connection and try again.");
+        setStatus(networkErrorStatus());
       }
       return;
     }
@@ -125,7 +134,7 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
       const name = (err as { name?: string })?.name;
       if (name === "AbortError" || ctrl.signal.aborted) return;
       console.error(err);
-      setStatus("Couldn't reach Open Food Facts. Check your connection or add manually.");
+      setStatus(networkErrorStatus());
     }
   };
 
@@ -181,7 +190,7 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
           } catch (err) {
             if (mySeq !== requestSeq) return;
             console.error(err);
-            setStatus("Couldn't reach Open Food Facts. Check your connection and try again.");
+            setStatus(networkErrorStatus());
           }
         },
         onCancel: () => {
