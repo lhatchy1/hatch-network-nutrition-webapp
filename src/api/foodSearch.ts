@@ -1,6 +1,10 @@
 // Thin wrapper around the Open Food Facts search API. No API key required,
 // CORS-friendly, suitable for a static client-side PWA.
 //
+// We use the legacy CGI search endpoint because the newer /api/v2/search is
+// facet-based (categories_tags, labels_tags…) and silently ignores free-text
+// queries — which made every search return the same globally-popular products.
+//
 // Docs: https://openfoodfacts.github.io/openfoodfacts-server/api/
 
 import type { IngredientCategory } from "../types";
@@ -24,7 +28,9 @@ interface OFFNutriments {
 
 interface OFFProduct {
   product_name?: string;
+  product_name_en?: string;
   generic_name?: string;
+  generic_name_en?: string;
   brands?: string;
   categories_tags?: string[];
   nutriments?: OFFNutriments;
@@ -34,8 +40,9 @@ interface OFFResponse {
   products?: OFFProduct[];
 }
 
-const ENDPOINT = "https://world.openfoodfacts.org/api/v2/search";
-const FIELDS = "product_name,generic_name,brands,categories_tags,nutriments";
+const ENDPOINT = "https://world.openfoodfacts.org/cgi/search.pl";
+const FIELDS =
+  "product_name,product_name_en,generic_name,generic_name_en,brands,categories_tags,nutriments";
 
 export async function searchFoods(
   query: string,
@@ -46,9 +53,13 @@ export async function searchFoods(
 
   const url = new URL(ENDPOINT);
   url.searchParams.set("search_terms", q);
+  url.searchParams.set("search_simple", "1");
+  url.searchParams.set("action", "process");
+  url.searchParams.set("json", "1");
+  url.searchParams.set("page_size", "20");
   url.searchParams.set("fields", FIELDS);
-  url.searchParams.set("page_size", "15");
-  url.searchParams.set("sort_by", "popularity_key");
+  // Prefer English-language product names where the entry has one.
+  url.searchParams.set("lc", "en");
 
   const res = await fetch(url.toString(), { signal });
   if (!res.ok) throw new Error(`Food search failed (${res.status})`);
@@ -61,7 +72,13 @@ export async function searchFoods(
     const kcal = n["energy-kcal_100g"];
     // Skip entries with no usable kcal — they're unhelpful for a nutrition app.
     if (typeof kcal !== "number" || kcal <= 0) continue;
-    const name = (p.product_name || p.generic_name || "").trim();
+    const name = (
+      p.product_name_en ||
+      p.product_name ||
+      p.generic_name_en ||
+      p.generic_name ||
+      ""
+    ).trim();
     if (!name) continue;
     hits.push({
       name,
@@ -92,3 +109,4 @@ function guessCategory(tags: string[]): IngredientCategory {
     return "Pantry";
   return "Other";
 }
+

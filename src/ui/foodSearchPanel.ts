@@ -51,6 +51,9 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let inflight: AbortController | null = null;
+  // Monotonic id — every response checks against this before touching the DOM
+  // so an aborted/stale request can't paint over a fresher one.
+  let requestSeq = 0;
   let latestHits: FoodHit[] = [];
 
   const setStatus = (msg: string) => {
@@ -68,9 +71,10 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
     setStatus("Searching…");
     const ctrl = new AbortController();
     inflight = ctrl;
+    const mySeq = ++requestSeq;
     try {
       const hits = await searchFoods(q, ctrl.signal);
-      if (ctrl.signal.aborted) return;
+      if (mySeq !== requestSeq) return;
       latestHits = hits;
       renderResults(results, hits);
       setStatus(
@@ -79,7 +83,11 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
           : `${hits.length} match${hits.length === 1 ? "" : "es"} — click one to add.`,
       );
     } catch (err) {
-      if ((err as { name?: string }).name === "AbortError") return;
+      // Swallow anything from a stale or aborted request — only the latest
+      // request is allowed to report errors to the user.
+      if (mySeq !== requestSeq) return;
+      const name = (err as { name?: string })?.name;
+      if (name === "AbortError" || ctrl.signal.aborted) return;
       console.error(err);
       setStatus("Couldn't reach Open Food Facts. Check your connection or add manually.");
     }
