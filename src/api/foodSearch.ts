@@ -27,6 +27,7 @@ interface OFFNutriments {
 }
 
 interface OFFProduct {
+  lang?: string;
   product_name?: string;
   product_name_en?: string;
   generic_name?: string;
@@ -42,7 +43,7 @@ interface OFFResponse {
 
 const ENDPOINT = "https://world.openfoodfacts.org/cgi/search.pl";
 const FIELDS =
-  "product_name,product_name_en,generic_name,generic_name_en,brands,categories_tags,nutriments";
+  "lang,product_name,product_name_en,generic_name,generic_name_en,brands,categories_tags,nutriments";
 
 export async function searchFoods(
   query: string,
@@ -56,7 +57,9 @@ export async function searchFoods(
   url.searchParams.set("search_simple", "1");
   url.searchParams.set("action", "process");
   url.searchParams.set("json", "1");
-  url.searchParams.set("page_size", "20");
+  // Slightly oversized so the English-only filter below still leaves a
+  // useful number of results to show.
+  url.searchParams.set("page_size", "30");
   url.searchParams.set("fields", FIELDS);
   // Prefer English-language product names where the entry has one.
   url.searchParams.set("lc", "en");
@@ -72,13 +75,7 @@ export async function searchFoods(
     const kcal = n["energy-kcal_100g"];
     // Skip entries with no usable kcal — they're unhelpful for a nutrition app.
     if (typeof kcal !== "number" || kcal <= 0) continue;
-    const name = (
-      p.product_name_en ||
-      p.product_name ||
-      p.generic_name_en ||
-      p.generic_name ||
-      ""
-    ).trim();
+    const name = pickEnglishName(p);
     if (!name) continue;
     hits.push({
       name,
@@ -91,6 +88,21 @@ export async function searchFoods(
     });
   }
   return hits;
+}
+
+// OFF's `lc` param only sets the UI language; the search still returns
+// French/German/etc entries whose `product_name_en` is unpopulated. Only
+// accept a hit if we can prove its name is English: either there's an
+// explicit English translation, or the product's primary language is "en"
+// (in which case the default `product_name` field holds English text).
+function pickEnglishName(p: OFFProduct): string {
+  const en = (p.product_name_en || p.generic_name_en || "").trim();
+  if (en) return en;
+  if (p.lang === "en") {
+    const def = (p.product_name || p.generic_name || "").trim();
+    if (def) return def;
+  }
+  return "";
 }
 
 function round(n: number): number {
