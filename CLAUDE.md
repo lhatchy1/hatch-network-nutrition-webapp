@@ -115,12 +115,21 @@ src/nutrition.ts  src/shopping.ts         ▼          src/status.ts
   │                     esc(), raw(), confirmAction()          │
   │  styles.css         design tokens + custom Greenhouse layer│
   │  authGate.ts        signed-out sign-in form                │
-  │  foodSearchPanel.ts text search + Scan, used by ingredients│
-  │                     view AND meals editor                  │
+  │  foodSearchPanel.ts text search + Scan + Migros-URL paste, │
+  │                     used by ingredients view AND meals     │
+  │                     editor AND replace-ingredient dialog   │
   │  mealPicker.ts      <dialog class="meal-picker"> wired by  │
   │                     every Week slot's ＋/› button.         │
   │                     openMealPicker({day, slotId}, after).  │
   │  barcodeScanner.ts  lazy-loaded ZXing camera scanner       │
+  └────────────────────────────────────────────────────────────┘
+
+  ┌─ src/api/ ─────────────────────────────────────────────────┐
+  │  foodSearch.ts  Open Food Facts text search + barcode      │
+  │                 lookup. Exports FoodHit.                   │
+  │  migros.ts      Migros product-URL → FoodHit, via the      │
+  │                 corsproxy.io reflector (Migros is a SPA    │
+  │                 with no CORS + no server-rendered HTML).   │
   └────────────────────────────────────────────────────────────┘
 ```
 
@@ -171,31 +180,45 @@ remote updates back to the server).
   flow, that's a different path from `Import JSON…` and should keep
   the "overwrite all data" confirmation.
 
-## Nutrition data (Open Food Facts)
+## Nutrition data (Open Food Facts + Migros)
 
-Ingredients can be added in three ways, ordered by speed-to-value:
+Ingredients can be added in four ways, ordered by speed-to-value:
 
 1. **Barcode scan** — opens the device camera, decodes an EAN-13 / EAN-8
    / UPC-A / UPC-E barcode via `@zxing/browser`, then hits OFF's
    `/api/v2/product/<barcode>.json`. Best for packaged products.
-2. **Text search** — debounced query against OFF's legacy free-text
+2. **Paste a Migros product URL** — anything matching
+   `migros.ch/<locale>/product/<id>` is detected in the search input by
+   `extractMigrosProductId()` and routed to `src/api/migros.ts`, which
+   `POST`s the Migros `/product-display/public/v1/products/mgb/<id>`
+   endpoint through `corsproxy.io`. Migros doesn't set CORS headers and
+   the page itself is an Angular SPA with no server-rendered nutrition,
+   so the proxy is unavoidable for a static client-side PWA. See the
+   "Gotchas" entry for the proxy dependency.
+3. **Text search** — debounced query against OFF's legacy free-text
    endpoint `/cgi/search.pl?search_terms=…&search_simple=1&action=process&json=1`.
    The newer `/api/v2/search` is facet-based and silently ignores
    `search_terms` — don't switch to it. `lc=en` is sent to prefer
    English names where the entry has them, but we **don't filter
    non-English hits out** — the user is the better filter, and a
    hard language filter risks hiding the right product.
-3. **Manual entry** — preserved fallback for raw / unbranded items.
+4. **Manual entry** — preserved fallback for raw / unbranded items.
 
-Both surfaces (Ingredients view, Meal editor) mount the same
-`mountFoodSearchPanel` component. In the meal editor, picking a hit
-creates a new library ingredient *and* attaches it to the meal at
-100 g in one step.
+All three surfaces (Ingredients view, Meal editor, Replace-ingredient
+dialog) mount the same `mountFoodSearchPanel` component. In the meal
+editor, picking a hit creates a new library ingredient *and* attaches
+it to the meal at 100 g in one step.
 
 The OFF→FoodHit mapping (`productToHit` in `src/api/foodSearch.ts`)
 drops products without usable `energy-kcal_100g` (those are useless
 for a nutrition planner) and best-effort-maps the OFF `categories_tags`
-into our six ingredient categories via `guessCategory`.
+into our six ingredient categories via `guessCategory`. The Migros→FoodHit
+mapping (`migrosToHit` in `src/api/migros.ts`) does the equivalent
+against the `nutrientsTable.rows` payload (label-matched in EN/DE/FR/IT
+so the parser works regardless of the user's chosen locale) and reads
+the per-100 unit (`g` vs `ml`) from `nutrientsTable.headers[0]`.
+`FoodHit.unit` is optional — only set when the source actually
+distinguishes; consumers default to `"g"` otherwise.
 
 ## Common changes
 
@@ -210,6 +233,7 @@ into our six ingredient categories via `guessCategory`.
 | Add a new persisted preference | Same as "Storage shape change", plus surface a control in the Settings dialog (`src/views/settings.ts`). If it affects rendering globally, write a thin helper module (see `theme.ts` for the pattern) so views don't poke the DOM directly. |
 | New `<dialog>` | Mount the element in `index.html`. In `src/ui/styles.css`, **scope every custom rule that sets `display` / position / size to `dialog.<class>[open]`** — Pico classless's `dialog { display: flex; backdrop-filter: … }` will otherwise paint the closed dialog full-screen on top of the page. Backdrop click via `e.target === dialog` (don't use `{ once: true }` — inside clicks consume the listener). |
 | New shareable kind | Add to `ShareKind` in `src/firebase/sharing.ts`, define a `Shared*` interface, add a tab in `src/views/share.ts`, and update `firestore.rules`. |
+| New retailer URL paste (Coop, Aldi, …) | Add `src/api/<retailer>.ts` exporting `extract<Retailer>ProductId()` + `lookup<Retailer>Product()` returning a `FoodHit`. Wire it into `src/ui/foodSearchPanel.ts`'s `run()` before the barcode check, parallel to the Migros branch. If the retailer doesn't set CORS headers, route through `corsproxy.io` like Migros does — but try a direct fetch first; some retailers' JSON APIs are CORS-open. |
 | Change custom domain | DNS `CNAME` at the registrar, `public/CNAME`, Settings → Pages → Custom domain, and `base` in `vite.config.ts` (`/` for a subdomain root, `/<subpath>/` if you ever subpath-serve again) |
 
 ## Auth + sync (Firebase)
@@ -321,6 +345,19 @@ bundle.
   search (it does free-text matching). Don't switch to `/api/v2/search`
   — that endpoint is facet-based and silently drops `search_terms`,
   which makes every query return the same popular products.
+- **Migros needs a CORS proxy.** `src/api/migros.ts` calls
+  `https://www.migros.ch/product-display/public/v1/products/mgb/<id>`
+  through `https://corsproxy.io/?url=…` because Migros doesn't send
+  `Access-Control-Allow-Origin` and the product page itself is an
+  Angular SPA (HTML scraping returns an empty `<app-root>` shell). The
+  endpoint is also geo-restricted to Swiss IPs — calls from elsewhere
+  return `HTTP 403 host_not_allowed`, so you can't smoke-test it from
+  a CI runner outside Switzerland; verify in a local browser. If
+  `corsproxy.io` ever flakes for real users, swap the `CORS_PROXY`
+  constant for a self-hosted Cloudflare Worker (the request is a plain
+  `POST` with body `"{}"` — any pass-through reflector works). The
+  request **must** be `POST` even though it reads — that's what the
+  Migros SPA itself sends.
 - **Custom domain.** The site is served at `https://food.hatchnetwork.ch/`
   via a DNS `CNAME` pointing the `food` subdomain at `lhatchy1.github.io`.
   `public/CNAME` ships in the Pages artifact to persist the
@@ -522,6 +559,7 @@ re-reading the conversation history.
 | Sharing UI | `src/views/share.ts` |
 | Routing / startup / nav rendering / mtop context | `src/main.ts` |
 | Open Food Facts integration | `src/api/foodSearch.ts` (search + barcode lookup) |
+| Migros product URL integration | `src/api/migros.ts` (paste-URL → FoodHit via corsproxy.io) |
 | Food-search UI (shared) | `src/ui/foodSearchPanel.ts` |
 | Meal picker dialog | `src/ui/mealPicker.ts` |
 | Replace-ingredient dialog | `src/ui/replaceDialog.ts` (wired from Shopping) |

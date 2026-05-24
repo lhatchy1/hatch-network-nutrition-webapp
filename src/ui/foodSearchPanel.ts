@@ -4,6 +4,7 @@
 
 import { lookupBarcode, searchFoods, wasRecentlyRateLimited } from "../api/foodSearch";
 import type { FoodHit } from "../api/foodSearch";
+import { extractMigrosProductId, lookupMigrosProduct } from "../api/migros";
 import { esc, html, raw } from "./components";
 
 export interface PanelOptions {
@@ -39,14 +40,14 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
           data-food-q
           autocomplete="off"
           inputmode="search"
-          placeholder="${opts.placeholder ?? "Search foods or paste a barcode…"}"
+          placeholder="${opts.placeholder ?? "Search foods, paste a barcode or Migros URL…"}"
           style="flex: 1 1 200px;"
         />
         <button class="btn" data-food-scan title="Scan barcode">⌖ Scan</button>
         <button class="btn ghost" data-food-cancel>Cancel</button>
       </div>
       <p class="food-status" data-food-status>
-        Scan a barcode, type one, or search by name. Powered by Open Food Facts.
+        Scan or type a barcode, paste a Migros product URL, or search by name.
       </p>
       <div class="food-results" data-food-results></div>
       ${raw(
@@ -81,7 +82,36 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
     if (trimmed.length < 2) {
       latestHits = [];
       results.innerHTML = "";
-      setStatus("Scan a barcode, type one, or search by name. Powered by Open Food Facts.");
+      setStatus("Scan or type a barcode, paste a Migros product URL, or search by name.");
+      return;
+    }
+
+    const mySeq = ++requestSeq;
+
+    // A Migros product URL routes to the Migros JSON API (via the
+    // corsproxy.io reflector — see src/api/migros.ts for why).
+    const migrosId = extractMigrosProductId(trimmed);
+    if (migrosId) {
+      setStatus(`Looking up Migros product ${migrosId}…`);
+      try {
+        const hit = await lookupMigrosProduct(migrosId);
+        if (mySeq !== requestSeq) return;
+        if (hit) {
+          latestHits = [hit];
+          renderResults(results, [hit]);
+          setStatus("1 match from Migros — click to add.");
+        } else {
+          latestHits = [];
+          results.innerHTML = "";
+          setStatus(
+            `Migros returned no nutrition data for product ${migrosId}. Try a different product or add manually.`,
+          );
+        }
+      } catch (err) {
+        if (mySeq !== requestSeq) return;
+        console.error(err);
+        setStatus("Couldn't reach Migros. Check the URL and your connection.");
+      }
       return;
     }
 
@@ -90,7 +120,6 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
     // Text-search on a numeric string returns junk on OFF, so this also
     // covers the "I typed a barcode into the search field" case.
     const isBarcode = /^\d{8,14}$/.test(trimmed);
-    const mySeq = ++requestSeq;
 
     if (isBarcode) {
       setStatus(`Looking up barcode ${trimmed}…`);
