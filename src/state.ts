@@ -42,7 +42,7 @@ function normalise(input: unknown): AppState {
   const obj = input as Partial<AppState>;
   return {
     ingredients: Array.isArray(obj.ingredients) ? obj.ingredients : base.ingredients,
-    meals: Array.isArray(obj.meals) ? obj.meals : base.meals,
+    meals: Array.isArray(obj.meals) ? obj.meals.map(stripLegacyMealFields) : base.meals,
     week: obj.week && typeof obj.week === "object" ? mergeWeek(obj.week as WeekPlan) : base.week,
     targets:
       obj.targets && typeof obj.targets === "object"
@@ -50,6 +50,14 @@ function normalise(input: unknown): AppState {
         : base.targets,
     shoppingChecked: Array.isArray(obj.shoppingChecked) ? obj.shoppingChecked : [],
   };
+}
+
+// Drop fields removed by past migrations (e.g. `tags`) so saves stay clean.
+function stripLegacyMealFields(m: unknown): AppState["meals"][number] {
+  const { tags: _tags, ...rest } = (m ?? {}) as Record<string, unknown> & {
+    tags?: unknown;
+  };
+  return rest as unknown as AppState["meals"][number];
 }
 
 function mergeWeek(week: Partial<WeekPlan>): WeekPlan {

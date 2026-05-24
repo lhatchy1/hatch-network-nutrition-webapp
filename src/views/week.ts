@@ -1,15 +1,9 @@
 import { getStore } from "../store";
 import { DAYS, SLOTS } from "../types";
-import type { DayKey, Meal, MealTag, SlotKey } from "../types";
+import type { DayKey, SlotKey } from "../types";
 import { dayTotals, fmtMacro, weekAverages } from "../nutrition";
 import { emptyWeek } from "../state";
 import { esc, html, raw, confirmAction } from "../ui/components";
-
-const SLOT_TAG: Record<SlotKey, MealTag> = {
-  bridge: "bridge",
-  lunch: "lunch",
-  dinner: "dinner",
-};
 
 export function renderWeek(target: HTMLElement): void {
   const store = getStore();
@@ -69,10 +63,7 @@ export function renderWeek(target: HTMLElement): void {
 
 function slotSelect(day: DayKey, slot: SlotKey): string {
   const store = getStore();
-  const tag = SLOT_TAG[slot];
-  const eligible: Meal[] = store.meals
-    .filter((m) => m.tags.includes(tag))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const eligible = [...store.meals].sort((a, b) => a.name.localeCompare(b.name));
   const current = store.week[day][slot];
   return `<select data-day="${day}" data-slot="${slot}">
     <option value="">— empty —</option>

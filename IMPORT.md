@@ -39,14 +39,11 @@ interface MealIngredient {
   amount: number;         // in the ingredient's unit (g, ml, or count)
 }
 
-type MealTag = "bridge" | "lunch" | "dinner" | "snack";
-
 interface Meal {
   id: string;
   name: string;
   servings: number;       // >= 1; nutrition is divided by this
   ingredients: MealIngredient[];
-  tags: MealTag[];        // controls which week-slot dropdowns list it
   notes?: string;
 }
 
@@ -72,9 +69,8 @@ interface AppState {
 - Every `MealIngredient.ingredientId` must reference an existing
   `Ingredient.id`.
 - Every non-null value in `week` must reference an existing `Meal.id`.
-- A meal only appears in a week slot's dropdown if its `tags` include
-  that slot — i.e. assign `"bridge"`, `"lunch"`, or `"dinner"` to meals
-  you want to use in those slots.
+- Any meal can be assigned to any slot — there is no longer a tag-based
+  filter.
 - `WeekPlan` must include all 7 days and all 3 slots; use `null` for
   empty slots.
 - Macros are **per 100** for `g`/`ml` ingredients, **per single item**
@@ -94,7 +90,7 @@ interface AppState {
   ],
   "meals": [
     { "id": "meal-chicken-rice", "name": "Chicken & rice",
-      "servings": 2, "tags": ["lunch", "dinner"],
+      "servings": 2,
       "ingredients": [
         { "ingredientId": "ing-chicken", "amount": 400 },
         { "ingredientId": "ing-rice",    "amount": 200 }

@@ -111,6 +111,43 @@ table input, table select { margin: 0; }
 dialog { max-width: 32rem; }
 dialog form { margin: 0; }
 
+.food-search {
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  background: var(--pico-card-background-color);
+}
+.food-search .food-status { margin: 0.25rem 0 0.5rem; }
+.food-hits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+.food-hits li { margin: 0; }
+.food-hit {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  border: none;
+  border-bottom: 1px solid var(--pico-muted-border-color);
+  border-radius: 0;
+  padding: 0.5rem 0.25rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  cursor: pointer;
+}
+.food-hit:hover, .food-hit:focus {
+  background: var(--pico-secondary-background);
+}
+.food-hit-name { font-weight: 600; }
+.food-hit-macros { font-size: 0.85rem; }
+
 @media (max-width: 640px) {
   header nav ul:first-child strong { font-size: 1rem; }
   #main-nav { gap: 0.25rem; }

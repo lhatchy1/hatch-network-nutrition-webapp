@@ -33,16 +33,11 @@ export interface MealIngredient {
   amount: number;
 }
 
-export type MealTag = "lunch" | "dinner" | "bridge" | "snack";
-
-export const MEAL_TAGS: MealTag[] = ["bridge", "lunch", "dinner", "snack"];
-
 export interface Meal {
   id: string;
   name: string;
   servings: number;
   ingredients: MealIngredient[];
-  tags: MealTag[];
   notes?: string;
 }
 

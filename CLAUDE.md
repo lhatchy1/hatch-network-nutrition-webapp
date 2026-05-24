@@ -72,8 +72,8 @@ in `src/ui/components.ts`, which escapes interpolations by default.
 | Task | Touch points |
 | --- | --- |
 | New view | Add `src/views/<name>.ts`, register in `ROUTES` in `main.ts`, add a link to the nav (auto-generated from `ROUTES`) |
-| New meal tag or slot | `src/types.ts` (`MealTag`, `MEAL_TAGS`, `SlotKey`, `SLOTS`, `SLOT_TAG` in `week.ts`) |
-| New ingredient category | `src/types.ts` (`INGREDIENT_CATEGORIES`) — listed categories drive the shopping-list grouping order |
+| New week slot | `src/types.ts` (`SlotKey`, `SLOTS`) |
+| New ingredient category | `src/types.ts` (`INGREDIENT_CATEGORIES`) — listed categories drive the shopping-list grouping order. Also update `guessCategory` in `src/api/foodSearch.ts` so Open Food Facts hits map into it. |
 | Storage shape change | Bump key in `src/state.ts` (`STORAGE_KEY`) **and** bump `CACHE_VERSION` in `public/sw.js`. Update `validateImport` and `normalise` |
 | Change Pages URL / repo name | `base` in `vite.config.ts`, `start_url` / `scope` in `public/manifest.webmanifest`, doc references in README/spec |
 

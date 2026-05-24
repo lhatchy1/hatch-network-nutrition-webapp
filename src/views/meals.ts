@@ -1,15 +1,16 @@
 import { getStore } from "../store";
 import { uid } from "../state";
-import { MEAL_TAGS } from "../types";
-import type { Meal, MealTag } from "../types";
+import type { Ingredient, Meal } from "../types";
 import { mealNutrition, fmtMacro } from "../nutrition";
 import { esc, html, raw, confirmAction } from "../ui/components";
+import { mountFoodSearchPanel } from "../ui/foodSearchPanel";
 
 interface ViewState {
   editingId: string | null;
+  searching: boolean;
 }
 
-const view: ViewState = { editingId: null };
+const view: ViewState = { editingId: null, searching: false };
 
 export function renderMeals(target: HTMLElement): void {
   if (view.editingId) {
@@ -41,17 +42,18 @@ function renderList(target: HTMLElement): void {
       name: "New meal",
       servings: 1,
       ingredients: [],
-      tags: ["lunch", "dinner"],
       notes: "",
     };
     store.meals.push(fresh);
     view.editingId = fresh.id;
+    view.searching = false;
     renderMeals(target);
   });
 
   target.querySelectorAll<HTMLElement>("[data-open]").forEach((el) => {
     el.addEventListener("click", () => {
       view.editingId = el.dataset.open!;
+      view.searching = false;
       renderMeals(target);
     });
   });
@@ -65,6 +67,7 @@ function renderList(target: HTMLElement): void {
       copy.name = `${m.name} (copy)`;
       store.meals.push(copy);
       view.editingId = copy.id;
+      view.searching = false;
       renderMeals(target);
     });
   });
@@ -93,7 +96,6 @@ function renderCard(m: Meal): string {
     <article class="meal-card">
       <div class="row">
         <strong class="grow">${esc(m.name)}</strong>
-        <span class="meal-meta">${m.tags.map(esc).join(", ") || "no tags"}</span>
       </div>
       <div class="meal-meta">
         ${fmtMacro(n.kcal)} kcal · ${fmtMacro(n.protein)}g protein · ${fmtMacro(n.carbs)}g C · ${fmtMacro(n.fat)}g F
@@ -134,16 +136,6 @@ function renderEdit(target: HTMLElement): void {
         <input id="m-serv" type="number" min="1" step="1" value="${meal.servings}" />
       </label>
     </div>
-    <fieldset>
-      <legend>Tags</legend>
-      ${raw(
-        MEAL_TAGS.map(
-          (t) => `<label>
-            <input type="checkbox" data-tag="${t}" ${meal.tags.includes(t) ? "checked" : ""} /> ${t}
-          </label>`,
-        ).join(" "),
-      )}
-    </fieldset>
     <label>Notes <textarea id="m-notes" rows="2">${esc(meal.notes ?? "")}</textarea></label>
 
     <h3>Ingredients</h3>
@@ -167,12 +159,14 @@ function renderEdit(target: HTMLElement): void {
 
     <div class="row">
       <select id="m-add-ing" class="grow">
-        <option value="">+ Add ingredient…</option>
+        <option value="">Pick from library…</option>
         ${raw(ingredientOptions)}
       </select>
       <input id="m-add-amt" type="number" step="any" min="0" placeholder="Amount" style="max-width: 8rem" />
       <button id="m-add-btn">Add</button>
+      <button id="m-search-btn" class="outline">+ Search foods</button>
     </div>
+    <div id="m-search-panel"></div>
 
     <h3>Per serving</h3>
     <p>
@@ -184,6 +178,38 @@ function renderEdit(target: HTMLElement): void {
   `;
 
   wireEdit(target, meal);
+
+  if (view.searching) mountMealSearch(target, meal);
+}
+
+function mountMealSearch(target: HTMLElement, meal: Meal): void {
+  const panel = target.querySelector<HTMLElement>("#m-search-panel");
+  if (!panel) return;
+  mountFoodSearchPanel(panel, {
+    placeholder: "Search foods to add to this meal…",
+    onCancel: () => {
+      view.searching = false;
+      renderMeals(target);
+    },
+    onPick: (hit) => {
+      if (!hit) return;
+      const store = getStore();
+      const ing: Ingredient = {
+        id: uid(),
+        name: hit.brand ? `${hit.name} (${hit.brand})` : hit.name,
+        unit: "g",
+        kcalPer100: hit.kcalPer100,
+        proteinPer100: hit.proteinPer100,
+        carbsPer100: hit.carbsPer100,
+        fatPer100: hit.fatPer100,
+        category: hit.category,
+      };
+      store.ingredients.push(ing);
+      meal.ingredients.push({ ingredientId: ing.id, amount: 100 });
+      view.searching = false;
+      renderMeals(target);
+    },
+  });
 }
 
 function wireEdit(target: HTMLElement, meal: Meal): void {
@@ -191,6 +217,7 @@ function wireEdit(target: HTMLElement, meal: Meal): void {
 
   target.querySelector("#back")?.addEventListener("click", () => {
     view.editingId = null;
+    view.searching = false;
     rerender();
   });
 
@@ -206,17 +233,6 @@ function wireEdit(target: HTMLElement, meal: Meal): void {
 
   (target.querySelector("#m-notes") as HTMLTextAreaElement).addEventListener("change", (e) => {
     meal.notes = (e.target as HTMLTextAreaElement).value;
-  });
-
-  target.querySelectorAll<HTMLInputElement>("[data-tag]").forEach((el) => {
-    el.addEventListener("change", () => {
-      const t = el.dataset.tag as MealTag;
-      if (el.checked) {
-        if (!meal.tags.includes(t)) meal.tags.push(t);
-      } else {
-        meal.tags = meal.tags.filter((x) => x !== t);
-      }
-    });
   });
 
   target.querySelectorAll<HTMLInputElement>("[data-amount]").forEach((el) => {
@@ -244,6 +260,11 @@ function wireEdit(target: HTMLElement, meal: Meal): void {
     meal.ingredients.push({ ingredientId: ingId, amount });
     sel.value = "";
     amt.value = "";
+    rerender();
+  });
+
+  target.querySelector("#m-search-btn")?.addEventListener("click", () => {
+    view.searching = !view.searching;
     rerender();
   });
 }
