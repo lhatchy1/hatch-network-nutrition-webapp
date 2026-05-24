@@ -84,12 +84,15 @@ export function initSync(): void {
     }
     const localEmpty = isEmptyState(local);
 
+    // Render the cached state immediately so sign-in feels instant. The
+    // remote read below can take several seconds on a cold Firestore
+    // transport (the benign "client is offline" warning), and we don't want
+    // the user staring at the sign-in form while it warms up.
+    reseedStore(local);
+    renderHook?.();
+
     const ref = userDocRef(user.uid);
-    if (!ref) {
-      reseedStore(local);
-      renderHook?.();
-      return;
-    }
+    if (!ref) return;
 
     let remote: AppState | null = null;
     try {
@@ -127,7 +130,11 @@ export function initSync(): void {
       chosen = local;
     }
 
-    reseedStore(chosen);
+    // Skip the reseed/re-render if the chosen state matches what's already
+    // in the store from the immediate render above — avoids a flash.
+    const current = snapshot(getStore());
+    const chosenChanged = !sameState(current, chosen);
+    if (chosenChanged) reseedStore(chosen);
 
     // Subscribe to live updates from other devices.
     const unsubscribe = onSnapshot(ref, (snap) => {
@@ -165,7 +172,7 @@ export function initSync(): void {
       });
     });
 
-    renderHook?.();
+    if (chosenChanged) renderHook?.();
   });
 }
 
