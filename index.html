@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1095c1" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <title>Meal Prep Planner</title>
+  </head>
+  <body>
+    <header class="container">
+      <nav>
+        <ul>
+          <li><strong>Meal Prep</strong></li>
+        </ul>
+        <ul id="main-nav"></ul>
+        <ul>
+          <li>
+            <button id="open-settings" class="outline" aria-label="Settings">⚙︎</button>
+          </li>
+        </ul>
+      </nav>
+    </header>
+    <main id="view" class="container"></main>
+    <dialog id="settings-dialog"></dialog>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
