@@ -216,6 +216,8 @@ dialog:not([open]) { display: none !important; }
   color: var(--ink-2);
   display: grid; place-items: center;
   font-size: 13px;
+  line-height: 1;
+  padding: 0;
   border: 0; cursor: pointer;
 }
 
@@ -284,7 +286,8 @@ main { padding-bottom: var(--mtabs-h); }
 .nav .gear {
   width: 34px; height: 34px; border-radius: 50%;
   background: var(--bg-soft); color: var(--ink-2);
-  display: grid; place-items: center; cursor: pointer; border: 0;
+  display: grid; place-items: center; cursor: pointer;
+  border: 0; padding: 0; line-height: 1; font-size: 14px;
 }
 
 @media (min-width: 920px) {
@@ -395,7 +398,10 @@ main { padding-bottom: var(--mtabs-h); }
 .daystrip .d .num { display: block; font-weight: 600; font-size: 15px; margin-top: 1px; font-family: var(--font-mono); }
 .daystrip .d.cur     { background: var(--ink); color: var(--bg); }
 [data-theme="dark"] .daystrip .d.cur { color: #0f1d18; }
-.daystrip .d.cur .lt { color: rgba(255,255,255,0.65); }
+/* Use currentColor + opacity so the letter stays legible in both
+   themes — a hard-coded white letter washes out against the cream
+   --ink in dark mode. */
+.daystrip .d.cur .lt { color: inherit; opacity: 0.65; }
 .daystrip .d .status {
   display: block; width: 4px; height: 4px;
   margin: 3px auto 0; border-radius: 50%;
@@ -467,6 +473,8 @@ main { padding-bottom: var(--mtabs-h); }
   color: var(--ink-2);
   display: grid; place-items: center;
   font-size: 14px;
+  line-height: 1;
+  padding: 0;
   flex: 0 0 22px;
   border: 0; cursor: pointer;
 }
@@ -910,6 +918,8 @@ dialog.settings .hdr .close {
   display: grid; place-items: center;
   border: 0; cursor: pointer;
   font-size: 14px;
+  line-height: 1;
+  padding: 0;
 }
 dialog.settings .body { padding: 6px 22px 22px; overflow-y: auto; }
 
