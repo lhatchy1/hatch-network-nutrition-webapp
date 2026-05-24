@@ -1326,8 +1326,10 @@ select, textarea {
 /* Pico classless ships [type=search] with a magnifying-glass background
    image plus a padding-inline-start to reserve space for it. Our design
    doesn't include search icons — strip both so app-level padding rules
-   (e.g. .search-card input) don't sit on top of the icon. */
-input[type="search"] {
+   (e.g. .search-card input) don't sit on top of the icon. The Pico
+   selector uses `:not(...)[type=search]` (specificity 0,2,0); match it
+   with `:not(...)[type="search"]` so our reset actually wins. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])[type="search"] {
   background-image: none;
   padding-inline-start: var(--pico-form-element-spacing-horizontal, 12px);
   border-radius: var(--r-md);
