@@ -1,6 +1,7 @@
 import { getStore } from "../store";
 import { aggregateShopping, formatAmount, shoppingAsMarkdown } from "../shopping";
 import { esc, html, raw, confirmAction } from "../ui/components";
+import { openReplaceDialog } from "../ui/replaceDialog";
 import type { IngredientCategory } from "../types";
 
 export function renderShopping(target: HTMLElement): void {
@@ -55,12 +56,15 @@ export function renderShopping(target: HTMLElement): void {
                 ${g.lines
                   .map((l) => {
                     const done = store.shoppingChecked.includes(l.ingredientId);
-                    return `<label class="item ${done ? "done" : ""}" data-line="${esc(l.ingredientId)}">
-                      <span class="ck"></span>
-                      <input type="checkbox" hidden data-id="${esc(l.ingredientId)}" ${done ? "checked" : ""} />
-                      <span class="nm">${esc(l.name)}</span>
-                      <span class="q">${esc(formatAmount(l.amount, l.unit))}</span>
-                    </label>`;
+                    return `<div class="item ${done ? "done" : ""}">
+                      <label class="check" data-line="${esc(l.ingredientId)}">
+                        <span class="ck"></span>
+                        <input type="checkbox" hidden data-id="${esc(l.ingredientId)}" ${done ? "checked" : ""} />
+                        <span class="nm">${esc(l.name)}</span>
+                        <span class="q">${esc(formatAmount(l.amount, l.unit))}</span>
+                      </label>
+                      <button class="replace" data-replace="${esc(l.ingredientId)}" aria-label="Replace ${esc(l.name)}" title="Replace with another product">↺</button>
+                    </div>`;
                   })
                   .join("")}
               </div>`;
@@ -78,6 +82,15 @@ export function renderShopping(target: HTMLElement): void {
         store.shoppingChecked = store.shoppingChecked.filter((x) => x !== id);
       }
       renderShopping(target);
+    });
+  });
+
+  target.querySelectorAll<HTMLButtonElement>("[data-replace]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const id = btn.dataset.replace!;
+      openReplaceDialog(id, () => renderShopping(target));
     });
   });
 

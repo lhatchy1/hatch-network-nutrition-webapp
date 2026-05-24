@@ -165,9 +165,22 @@ function wireList(target: HTMLElement): void {
   });
 
   target.querySelector("#meals-filter")?.addEventListener("input", (e) => {
-    view.query = (e.target as HTMLInputElement).value;
+    const t = e.target as HTMLInputElement;
+    const caret = t.selectionStart;
+    view.query = t.value;
     view.selectedId = null;
     renderMeals(target);
+    const fresh = target.querySelector<HTMLInputElement>("#meals-filter");
+    if (fresh) {
+      fresh.focus();
+      if (caret !== null) {
+        try {
+          fresh.setSelectionRange(caret, caret);
+        } catch {
+          /* setSelectionRange is unsupported on some input types */
+        }
+      }
+    }
   });
 
   target.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((btn) => {

@@ -33,6 +33,7 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
           style="flex: 1 1 200px;"
         />
         <button class="btn" data-food-scan title="Scan barcode">⌖ Scan</button>
+        <button class="btn" data-food-code title="Type a barcode (EAN/UPC) manually"># Code</button>
         <button class="btn ghost" data-food-cancel>Cancel</button>
       </div>
       <p class="food-status" data-food-status>
@@ -53,6 +54,7 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
   const manual = container.querySelector<HTMLButtonElement>("[data-food-manual]");
   const cancel = container.querySelector<HTMLButtonElement>("[data-food-cancel]")!;
   const scanBtn = container.querySelector<HTMLButtonElement>("[data-food-scan]")!;
+  const codeBtn = container.querySelector<HTMLButtonElement>("[data-food-code]")!;
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let inflight: AbortController | null = null;
@@ -122,6 +124,37 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
 
   manual?.addEventListener("click", () => opts.onPick(null));
   cancel.addEventListener("click", () => opts.onCancel?.());
+
+  codeBtn.addEventListener("click", async () => {
+    const code = window.prompt("Enter the product barcode (EAN-13, EAN-8, UPC-A, UPC-E):");
+    if (code === null) return;
+    const trimmed = code.trim();
+    if (!trimmed) return;
+    if (!/^\d{6,14}$/.test(trimmed)) {
+      setStatus("Barcodes are 6–14 digits — please re-enter.");
+      return;
+    }
+    setStatus(`Looking up barcode ${trimmed}…`);
+    codeBtn.disabled = true;
+    // Bump the seq so any in-flight text-search response is ignored
+    // and can't paint over the barcode result below.
+    const mySeq = ++requestSeq;
+    try {
+      const hit = await lookupBarcode(trimmed);
+      if (mySeq !== requestSeq) return;
+      if (hit) {
+        opts.onPick(hit);
+      } else {
+        setStatus(`Barcode ${trimmed} isn't in Open Food Facts. Try a text search or add manually.`);
+      }
+    } catch (err) {
+      if (mySeq !== requestSeq) return;
+      console.error(err);
+      setStatus("Couldn't reach Open Food Facts. Check your connection and try again.");
+    } finally {
+      codeBtn.disabled = false;
+    }
+  });
 
   scanBtn.addEventListener("click", async () => {
     // The ZXing-based scanner is ~140 KB gzipped — load it on demand so

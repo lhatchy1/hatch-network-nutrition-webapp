@@ -10,6 +10,12 @@ import {
 import { esc, html, raw, confirmAction } from "../ui/components";
 import type { MealSlot, ThemePref } from "../types";
 import { currentUser, signOut as authSignOut } from "../firebase/auth";
+import {
+  syncNow,
+  getLastSyncedAt,
+  isSyncActive,
+  onSyncStatusChange,
+} from "../firebase/sync";
 import importPrompt from "../../IMPORT.md?raw";
 import { applyTheme } from "../theme";
 
@@ -104,6 +110,13 @@ function render(dialog: HTMLDialogElement, onChange: () => void): void {
 }
 
 function renderAccountGroup(email: string, displayName: string): string {
+  const syncOn = isSyncActive();
+  const last = getLastSyncedAt();
+  const status = syncOn
+    ? last
+      ? `Last synced ${formatRelative(last)}`
+      : "Sync ready"
+    : "Sync offline";
   return `<section class="settings-group">
     <div class="grp-h"><span>Account</span></div>
     <div class="row">
@@ -115,10 +128,24 @@ function renderAccountGroup(email: string, displayName: string): string {
       <input class="inline-input" id="set-display-name" value="${esc(displayName)}" placeholder="(shown on shared items)" />
     </div>
     <div class="row">
+      <span class="lbl">Cloud sync</span>
+      <span class="val" id="sync-status" style="font-family: var(--font-mono); font-size: 11px;">${esc(status)}</span>
+      <button class="btn sm" id="sync-now-btn" ${syncOn ? "" : "disabled"}>↻ Sync now</button>
+    </div>
+    <div class="row">
       <span class="lbl">Session</span>
       <button class="btn sm ghost" id="sign-out-btn">Sign out</button>
     </div>
   </section>`;
+}
+
+function formatRelative(ts: number): string {
+  const delta = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (delta < 5) return "just now";
+  if (delta < 60) return `${delta}s ago`;
+  if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
+  if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
+  return new Date(ts).toLocaleString();
 }
 
 function macroTile(key: string, label: string, value: number, unit: string): string {
@@ -181,6 +208,46 @@ function wire(dialog: HTMLDialogElement, onChange: () => void): void {
     await authSignOut();
     dialog.close();
   });
+
+  // Manual sync trigger + live status updates while the dialog is open.
+  const syncBtn = dialog.querySelector<HTMLButtonElement>("#sync-now-btn");
+  syncBtn?.addEventListener("click", async () => {
+    if (!isSyncActive()) return;
+    syncBtn.disabled = true;
+    const original = syncBtn.textContent;
+    syncBtn.textContent = "Syncing…";
+    try {
+      await syncNow();
+    } catch (err) {
+      console.warn("Manual sync failed", err);
+      alert(
+        "Sync failed. Check your connection and try again.\n\n" +
+          (err instanceof Error ? err.message : String(err)),
+      );
+    } finally {
+      syncBtn.disabled = !isSyncActive();
+      syncBtn.textContent = original ?? "↻ Sync now";
+    }
+  });
+  const offSync = onSyncStatusChange(() => {
+    const status = dialog.querySelector<HTMLElement>("#sync-status");
+    if (!status) return;
+    const last = getLastSyncedAt();
+    status.textContent = isSyncActive()
+      ? last
+        ? `Last synced ${formatRelative(last)}`
+        : "Sync ready"
+      : "Sync offline";
+  });
+  // Drop the subscription when the dialog closes so we don't pile up
+  // listeners across open/close cycles.
+  dialog.addEventListener(
+    "close",
+    () => {
+      offSync();
+    },
+    { once: true },
+  );
 
   // Macro target tiles — tap to edit inline.
   dialog.querySelectorAll<HTMLElement>("[data-edit-target]").forEach((el) => {
