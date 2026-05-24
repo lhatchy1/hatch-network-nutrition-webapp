@@ -5,7 +5,7 @@ meals, plan a week (bridge / lunch / dinner per day), see live nutrition
 totals against your targets, and auto-generate a shopping list. Fully
 client-side, persists to `localStorage`, installable as a PWA.
 
-Live: `https://lhatchy1.github.io/hatch-network-nutrition-webapp/`
+Live: `https://food.hatchnetwork.ch/`
 
 ## Docs
 
@@ -23,7 +23,7 @@ Vite + TypeScript · Alpine.js · Pico.css · service worker · GitHub Pages.
 
 ```sh
 npm install
-npm run dev        # http://localhost:5173/hatch-network-nutrition-webapp/
+npm run dev        # http://localhost:5173/
 npm run build      # typecheck + production build to dist/
 npm run preview    # serve the production build locally (use this to test the PWA)
 npm run typecheck  # tsc --noEmit only
@@ -36,12 +36,15 @@ npm run icons      # regenerate the placeholder PWA icons
 [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml).
 
 **One-time setup in the repo**: Settings → Pages → Source → **GitHub
-Actions**. After the first successful run the site lives at the URL
-above.
+Actions**, and Settings → Pages → Custom domain → `food.hatchnetwork.ch`
+(must match `public/CNAME`). After the first successful run the site
+lives at the URL above.
 
-If you fork or rename the repo, update `base` in `vite.config.ts` to
-match the new subpath, and `start_url` / `scope` in
-`public/manifest.webmanifest` if needed.
+If you fork or move to a different domain: edit `public/CNAME`, the
+custom-domain field in Pages settings, and the DNS `CNAME` record at
+your registrar (pointing the subdomain at `<username>.github.io`). If
+you instead deploy at a subpath, set `base` in `vite.config.ts` to
+`/<subpath>/`.
 
 ## Importing a plan from a chat
 

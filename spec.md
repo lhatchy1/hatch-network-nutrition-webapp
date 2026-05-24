@@ -30,7 +30,7 @@ A lightweight, single-user web app for planning weekly meals, tracking nutrition
 - **Pico.css** for default styling (classless, built-in dark mode, ~10 KB gzipped)
 - **localStorage** for persistence
 - **PWA**: web manifest + service worker for offline + installable
-- **Deploy**: GitHub Pages via GitHub Actions (`actions/deploy-pages@v4`); main triggers a build & deploy. Vite `base` is `/hatch-network-nutrition-webapp/` to match the repo subpath.
+- **Deploy**: GitHub Pages via GitHub Actions (`actions/deploy-pages@v4`); main triggers a build & deploy. Served from the custom domain `food.hatchnetwork.ch` via a DNS `CNAME` → `lhatchy1.github.io`; `public/CNAME` ships in the artifact and Vite `base` is `/`.
 - No hard bundle-size budget — favour clarity and small deps, but no obsessive byte-counting
 
 ## Data model
