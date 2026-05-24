@@ -1,11 +1,11 @@
-# Importing into Meal Prep Planner
+# Importing into Hatch · Food planner
 
-The Settings → **Import JSON…** flow accepts a JSON file containing
-ingredients and meals and **merges them into your library**. Your meal
-slots, week plan, daily targets, display name and shared items are not
-touched. Importing is non-destructive: every imported item is given a
-fresh id, so re-importing the same file won't overwrite anything you
-already have.
+The Settings → **Import library JSON** flow accepts a JSON file
+containing ingredients and meals and **merges them into your
+library**. Your meal slots, week plan, daily macro targets, theme,
+display name and shared items are not touched. Importing is
+non-destructive: every imported item is given a fresh id, so
+re-importing the same file won't overwrite anything you already have.
 
 > To share a **week plan** (slots + assignments) between accounts, use
 > the in-app **Share** tab instead. JSON import is for seeding the
@@ -113,9 +113,9 @@ match-by-name against your existing library.
 
 ## File details
 
-- Exports include the full app state (slots, week, targets, profile),
-  but the importer only reads the `ingredients` and `meals` arrays.
-  Use export for backups; use import for seeding new content.
+- Exports include the full app state (slots, week, targets, theme,
+  profile), but the importer only reads the `ingredients` and `meals`
+  arrays. Use export for backups; use import for seeding new content.
 - Exported filename: `mealprep-YYYY-MM-DD.json`.
-- `localStorage` key: `mealprep:v2` (or `mealprep:v2:{uid}` when
-  signed in).
+- `localStorage` key: `mealprep:v3` (or `mealprep:v3:{uid}` when
+  signed in). Older `v1` / `v2` keys auto-migrate on first load.

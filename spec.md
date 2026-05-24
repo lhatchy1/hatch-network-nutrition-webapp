@@ -40,14 +40,23 @@ shopping lists, and sharing recipes / plans with other users.
 
 - **Vite + TypeScript**, vanilla — no React, Vue, Svelte, etc.
 - **Alpine.js** (~15 KB) for reactivity
-- **Pico.css** for default styling (classless CSS, dark mode via
-  `prefers-color-scheme`)
+- **Pico.css classless** for native form/dialog defaults only; the
+  rest of the UI is a hand-rolled "Greenhouse" layer in
+  `src/ui/styles.css` (design tokens, mobile bottom tab bar +
+  desktop nav, four-macro rings, native `<dialog>` for Settings and
+  the meal picker). Theme via `[data-theme="light|dark"]` on
+  `<html>`; `"auto"` removes the attribute so `prefers-color-scheme`
+  takes over.
+- **Fonts**: Geist (display + body) + DM Mono (numerals / labels) via
+  Google Fonts. `font-variant-numeric: tabular-nums` on `body`.
 - **Firebase** (Auth + Firestore) for accounts, per-user sync, and
   the public sharing collections
 - **Open Food Facts** for nutrition lookups (text search + barcode);
   `@zxing/browser` is lazy-loaded for the camera-based barcode scanner
-- **localStorage** as offline cache (key `mealprep:v2[:uid]`)
-- **PWA**: web manifest + service worker for offline + installable
+- **localStorage** as offline cache (key `mealprep:v3[:uid]`,
+  back-fills from v1/v2 on first load)
+- **PWA**: web manifest + service worker for offline + installable;
+  cache key `mealprep-v4`
 - No hard bundle-size budget — favour clarity
 
 ## Data model
@@ -101,14 +110,17 @@ interface UserProfile {
   displayName: string;        // shown on items the user shares
 }
 
+type ThemePref = "light" | "dark" | "auto";
+
 interface AppState {
   ingredients: Ingredient[];
   meals: Meal[];
   slots: MealSlot[];          // ordered; renders week-grid rows top→bottom
   week: WeekPlan;
-  targets: { kcal: number; protein: number };
+  targets: { kcal: number; protein: number; carbs: number; fat: number };
   shoppingChecked: string[];
   profile: UserProfile;
+  theme: ThemePref;           // persisted; applied on boot by theme.ts
 }
 ```
 
@@ -129,47 +141,70 @@ configured.)
 
 ### 1. Ingredients
 
-- Table: name, unit, kcal/100, protein/100, carbs/100, fat/100, category
-- Add via OFF (barcode scan, text search) or fall back to manual entry
-- Edit / delete / **Share** rows inline
-- Filter by name and category, sort by any column
+- Promoted **Scan a barcode** CTA at the top (sage-tinted card) — the
+  primary add path. Opens the same panel as the **+ Add ingredient**
+  button but auto-opens the camera scanner first.
+- Filter pills (All / Protein / Carbs / Produce / Dairy / Pantry) +
+  free-text search.
+- Card rows showing kcal / P / C / F per 100 g/ml/unit, with a
+  coloured `.cat-tag` on the right for the category.
+- Inline edit panel on tap; Share appears only when signed in.
 
 ### 2. Meals
 
-- List view: meal name, ingredient count, kcal/serving, protein/serving
+- Each row carries a small coloured category dot derived from the
+  meal's first ingredient.
+- Master-detail on desktop (sticky list left, detail right with the
+  four-macro tile grid + ingredient lines). On mobile both panels
+  stack — a future tap-to-detail navigation is a known gap.
 - Detail/edit view:
   - Name, servings, notes
   - Add ingredients: pick from the library, or use **+ Search foods**
     to look up + attach in one step
-  - Live-calculated nutrition per serving
-- Duplicate / **Share** / Delete actions on each meal
-- A shared meal carries its ingredients with it
+  - Live-calculated nutrition per serving (all four macros)
+- Duplicate / **Share** / Delete actions in the detail header.
+- A shared meal carries its ingredients with it.
 
 ### 3. Week
 
-- Grid: 7 columns (Mon–Sun), N rows (one per slot in `state.slots`)
-- Each cell: dropdown of every meal in the library, or "empty"
-- Per-day totals row at bottom: kcal, protein
-- Weekly average row, colour-coded vs target
+- **Mobile**: page header (eyebrow + active day name) → 7-day strip
+  (initial + date + status dot per day, current day in inverted ink)
+  → today card with four macro rings + four slot rows. Every slot
+  has an always-visible trailing button: `＋` (filled accent) when
+  empty, `›` (muted ghost) when filled. Both open the meal picker
+  dialog, which can pick, replace, or clear in one interaction.
+- **Desktop**: page header (Mon → Sun date range + weekly macro
+  averages inline) → 7-column `.week-grid` of `.day-col` cards. Each
+  column has the slot rows + a totals block (status-coloured big
+  kcal number, mono `/ N,NNN kcal`, P/C/F line). Current day's
+  column uses the sage tint.
+- Day swipe (mobile): horizontal swipe on the today card moves to
+  the prev/next day.
+- Status colours land in: day-strip status dot, macro ring stroke,
+  day-total big-number, and the P value on the day-totals row —
+  always via the `.v-under` / `.v-near` / `.v-over` classes from
+  `status.ts`.
 - **Share this week**, "Clear week", and the (deferred) "Duplicate
-  previous week" actions
+  previous week" actions.
 
 ### 4. Shopping list
 
-- Auto-generated from the current week's plan
-- Grouped by ingredient category
-- Each line: ingredient name + total amount + unit
-- Checkbox per line (state persists in `shoppingChecked`)
-- Buttons: "Copy as text" (markdown list), "Reset checks"
-- Smart unit display: 1500 g → "1.5 kg"; 1200 ml → "1.2 L"
+- Auto-generated from the current week's plan.
+- Summary card with a progress ring + "N of M items · K aisles".
+- Category groups (`.cat-h` + `.cat-group`) — the cat-h carries the
+  category swatch + checked count; each item has a circular `.ck`
+  that fills with sage when checked. Done items strike-through.
+- Buttons: "Copy as text" (markdown list), "Reset checks".
+- Smart unit display: 1500 g → "1.5 kg"; 1200 ml → "1.2 L".
 
 ### 5. Share
 
-- Three tabs: Meals (default), Ingredients, Week plans
-- Cards show author display name + share date
-- "Add to my library" / "Adopt this plan" copies items locally with
-  fresh ids (no collisions on re-import)
-- "Unshare" appears only on items the current user authored
+- Three pill tabs: Meals (default), Ingredients, Weeks.
+- Cards have an avatar (first initial of the author's display name)
+  + relative publish time ("2d ago", "1w ago", date for older).
+- "Copy" / "Copy week" verb; after import the button switches to
+  the muted `.added` state with a ✓ prefix.
+- "Unshare" appears only on items the current user authored.
 
 ## Authentication & sync
 
@@ -179,10 +214,11 @@ configured.)
   to create accounts either.
 - **Per-user data**: Firestore at `/users/{uid}/state/main` holds the
   whole `AppState` as a single document.
-- **Cache**: localStorage at `mealprep:v2:{uid}` for signed-in users,
-  `mealprep:v2` while signed out. The signed-out scope migrates into
+- **Cache**: localStorage at `mealprep:v3:{uid}` for signed-in users,
+  `mealprep:v3` while signed out. The signed-out scope migrates into
   the per-uid scope on first sign-in (with a reconcile prompt if the
-  cloud has different data).
+  cloud has different data). Older `mealprep:v1` / `mealprep:v2` keys
+  are auto-migrated on first read.
 - **Live sync**: `onSnapshot` keeps multiple devices in sync. Local
   saves debounce up to Firestore; remote updates re-seed the store.
 - **Sharing**: top-level Firestore collections `shared_ingredients`,
@@ -201,26 +237,33 @@ configured.)
 - When signed in, the same snapshot mirrors to Firestore (with a
   `lastPushed` JSON cache to avoid echoing remote updates back)
 - On load: if key missing, initialise with default state — empty
-  library, three default slots, 2050 kcal / 140 g protein targets
+  library, three default slots (`bridge` / `lunch` / `dinner`),
+  targets `{ kcal: 2050, protein: 140, carbs: 220, fat: 70 }`, theme
+  `"auto"`.
 
 ## Import / export
 
-- The gear icon opens a Settings modal with:
+- The gear icon (top-right on both viewports) opens a native
+  `<dialog>` with five grouped sections:
   - **Account** (signed-in only) — email, display name, sign-out
-  - **Daily targets** — kcal and protein
-  - **Meal slots** — add / rename / reorder / remove
-  - **Export JSON** — downloads `mealprep-YYYY-MM-DD.json` (full
-    snapshot, used for backups)
-  - **Import ingredients & meals…** — file picker; reads the
-    `ingredients` and `meals` arrays from the file and **merges**
-    them into the library with fresh ids. Slots, week plan,
-    targets, profile and shared items are untouched. See
-    [`IMPORT.md`](./IMPORT.md).
-  - **Copy import prompt** — copies `IMPORT.md` to the clipboard
-    so a chat can generate a JSON payload from a natural-language
-    brief
-  - **Reset all data** — confirms, then clears localStorage (the
-    sync hook also pushes the empty state up)
+  - **Daily macro targets** — kcal / P / C / F tiles; tap a tile to
+    edit inline
+  - **Day structure** — slot count, slot labels (rename / reorder /
+    remove)
+  - **Appearance** — theme segment (Light / Dark / Auto)
+  - **Data** — Export everything (JSON), Import library JSON…, Copy
+    import prompt, Clear all data
+- **Export JSON** downloads `mealprep-YYYY-MM-DD.json` (full
+  snapshot, used for backups; includes the theme preference).
+- **Import ingredients & meals…** — file picker; reads the
+  `ingredients` and `meals` arrays from the file and **merges**
+  them into the library with fresh ids. Slots, week plan, targets,
+  theme, profile and shared items are untouched. See
+  [`IMPORT.md`](./IMPORT.md).
+- **Copy import prompt** — copies `IMPORT.md` to the clipboard so a
+  chat can generate a JSON payload from a natural-language brief.
+- **Reset all data** — confirms, then clears localStorage (the sync
+  hook also pushes the empty state up).
 
 To move a week plan between accounts, use the in-app **Share** tab,
 not JSON import.
@@ -233,17 +276,25 @@ not JSON import.
   intercepts same-origin GETs so Firebase requests pass through
 - Versioned cache key (`mealprep-v<n>`) — bump `CACHE_VERSION` in
   `sw.js` on shape-breaking releases so old assets evict. Current
-  version: **v3**.
+  version: **v4**.
 
 ## UI / UX principles
 
-- Mobile-first; week grid scrolls horizontally on narrow screens
-- Dark mode via `prefers-color-scheme` (Pico.css handles this)
-- Keyboard-friendly: tab through inputs, Enter to confirm
-- No flash of unstyled content; render skeleton until state loads
-- Confirm before destructive actions (delete, reset, unshare)
-- No analytics, no telemetry; only outbound traffic is Firebase and
-  the Open Food Facts API
+- Mobile-first; ≥ 920 px swaps to desktop chrome (horizontal nav +
+  full 7-day grid). Mobile Week is a single-day view (daystrip +
+  today card with rings + slot rows).
+- Dark mode via `[data-theme="dark"]` on `<html>` (or
+  `prefers-color-scheme` when theme is `"auto"`). Switching is
+  persisted per user.
+- Asymmetric per-macro status thresholds (kcal ±5 %, protein under-
+  only, carbs ±15 %, fat over-only) — only flag what actually
+  matters.
+- Keyboard-friendly: tab through inputs, Enter to confirm.
+- No flash of unstyled content; render skeleton until state loads.
+- Confirm before destructive actions (delete, reset, unshare,
+  clear week).
+- No analytics, no telemetry; only outbound traffic is Firebase,
+  the Open Food Facts API, and Google Fonts.
 
 ## File structure
 
@@ -252,18 +303,19 @@ layout:
 
 ```
 src/
-├── main.ts              # entry, router, Alpine + Firebase init
+├── main.ts              # entry, router, nav rendering, Alpine + Firebase init
 ├── types.ts             # all shared types + default slots / categories
-├── state.ts             # load/save/import/validate, storage scope
+├── state.ts             # load/save/import/validate, storage scope, migration
 ├── store.ts             # Alpine store + snapshot / replace / reseed
 ├── nutrition.ts         # mealNutrition, dayTotals, weekAverages
 ├── shopping.ts          # aggregate + unit format + markdown export
+├── status.ts            # asymmetric per-macro status() + mealCategory / dotClass
+├── theme.ts             # applyTheme(pref) → [data-theme] on <html>
 ├── api/foodSearch.ts    # Open Food Facts (search + barcode lookup)
 ├── firebase/            # config, auth, sync, sharing
 ├── ui/                  # components, authGate, foodSearchPanel,
-│                          barcodeScanner (lazy), styles
-└── views/               # ingredients, meals, week, shopping, share,
-                           settings
+│                          mealPicker, barcodeScanner (lazy), styles
+└── views/               # week, meals, ingredients, shopping, share, settings
 ```
 
 ## Acceptance checklist

@@ -31,38 +31,75 @@ turned off. Firestore is in production mode with rules from
 | --- | --- | --- |
 | Build | Vite + TypeScript (vanilla template) | Fast dev, sensible defaults |
 | Reactivity | Alpine.js | Tiny; we use only the global store + `Alpine.effect` |
-| CSS | Pico.css | Classless, dark mode via `prefers-color-scheme` |
-| Persistence | `localStorage` key `mealprep:v2[:uid]` | Single-blob, debounced 300 ms; namespaced per user once signed in |
+| CSS | Pico **classless** (forms + `<dialog>` only) + custom Greenhouse layer in `src/ui/styles.css` | Pico handles native form/dialog defaults; everything else (layout, nav, week grid, status colours, dialogs) is hand-rolled against design tokens. See "Design direction" below. |
+| Design tokens | CSS custom properties at the top of `src/ui/styles.css` (`--bg`, `--ink`, `--accent`, `--cat-*`, `--status-*`, …) | Single source of truth for the warm sage/terracotta "Greenhouse" palette; theme switching swaps the same names in `[data-theme="dark"]`. |
+| Fonts | Geist (display + body) + DM Mono (numerals / labels) via Google Fonts | Brief locks these two faces; nothing else. `font-variant-numeric: tabular-nums` is set on `body`. |
+| Persistence | `localStorage` key `mealprep:v3[:uid]` | Single-blob, debounced 300 ms; namespaced per user once signed in. `normalise()` back-fills from v1/v2 keys on first load. |
 | Auth + sync | Firebase Auth (Email/Password) + Firestore | Cross-device sync; admin-provisioned accounts; offline-first via localStorage cache |
-| PWA | `public/manifest.webmanifest` + `public/sw.js` (stale-while-revalidate, versioned cache) | Offline-capable, installable |
-| Routing | Hash router (`#/ingredients`, `#/meals`, `#/week`, `#/shopping`, `#/share`) | GitHub Pages has no SPA fallback; hashes never hit the server |
+| PWA | `public/manifest.webmanifest` + `public/sw.js` (stale-while-revalidate, versioned cache `mealprep-v4`) | Offline-capable, installable |
+| Routing | Hash router (`#/week`, `#/meals`, `#/ingredients`, `#/shopping`, `#/share`) | GitHub Pages has no SPA fallback; hashes never hit the server. `#/week` is the default. |
 | Hosting | GitHub Pages via Actions (`actions/deploy-pages@v4`) | No backend; main → live |
 | Bundle target | None (was 50 KB, dropped during planning) | Optimise for clarity |
+
+### Design direction — "Greenhouse"
+
+Full visual handoff lives in the conversation history under
+`design_handoff_hatch_greenhouse/` (warm off-white surfaces, sage
+accent, terracotta destructive, four-macro rings, mobile bottom tab
+bar + desktop horizontal nav, native `<dialog>` for Settings and the
+meal picker). The locked decisions to respect when changing UI:
+
+1. **Asymmetric per-macro status** — `kcal` symmetric ±5 %, `protein`
+   under-only, `carbs` symmetric ±15 %, `fat` over-only. Implemented
+   in `src/status.ts`; render via the `.v-under` / `.v-near` /
+   `.v-over` classes (never inline colours).
+2. **Category dot, not slot icon** — the small coloured circle on
+   every meal row is derived from the meal's first ingredient's
+   category (`mealCategory()` in `status.ts`).
+3. **Mobile vs desktop chrome** — top context bar (`.mtop`) + bottom
+   tab bar (`.mtabs`) under 920 px; horizontal `.nav` ≥ 920 px. Both
+   ship in `index.html`; CSS hides the inactive set.
+4. **Always-visible affordance on every Week slot** — `＋` for empty,
+   `›` for filled; both open the meal picker. There is no
+   "click the row" alternative.
+5. **Settings + meal picker = native `<dialog>`** — `showModal()`
+   handles backdrop/focus-trap/Esc. The custom layer resets Pico's
+   `dialog { display: flex }` overlay so a closed dialog can't paint;
+   see "Gotchas" below.
 
 ## Architecture in one diagram
 
 ```
 index.html
-  ├── #main-nav            (filled by main.ts on hashchange)
-  ├── #view                (the current view OR the sign-in form)
-  └── #settings-dialog     (gear icon → openSettings)
+  ├── .nav                   (desktop horizontal nav, filled by main.ts)
+  ├── .mtop                  (mobile top bar: brand · #mtop-ctx · gear)
+  ├── #view                  (the current view OR the sign-in form)
+  ├── .mtabs                 (mobile bottom tab bar, filled by main.ts)
+  ├── #settings-dialog       (native <dialog class="settings">)
+  └── #meal-picker-dialog    (native <dialog class="meal-picker">)
 
 main.ts
   ├── initStore(Alpine)              ← creates Alpine.store("app")
+  ├── applyTheme(store.theme)        ← writes [data-theme] before paint
   ├── initAuth() + initSync()        ← only if isFirebaseConfigured()
-  ├── Alpine.effect(renderCurrent)   ← re-renders the view whenever any
-  │                                    tracked store field changes
+  ├── Alpine.effect(renderCurrent)   ← re-renders on any tracked field
   ├── hashchange → renderCurrent
-  └── service worker register (PROD only, via import.meta.env.PROD)
+  ├── renderNav(active)              ← fills both .nav .links and .mtabs,
+  │                                    plus #mtop-ctx (per-route caption)
+  ├── setMealPickerCreateHook(...)   ← "＋ New meal" footer → #/meals
+  └── service worker register (PROD only)
 
-src/state.ts                 src/store.ts
-  load / save / validate       Alpine store + snapshot / replaceState
-  setStorageScope(uid)         reseedStore() (used after sign-in/out)
-  setOnSave(hook)              snapshot strips Alpine proxies → JSON-safe
-  (signed-out / per-uid keys)
+src/state.ts                 src/store.ts                src/theme.ts
+  load / save / validate       Alpine store +              applyTheme(pref) →
+  setStorageScope(uid)         snapshot / replaceState     [data-theme] on <html>
+  setOnSave(hook)              reseedStore() (sign-in/out) ("auto" removes it)
+  (signed-out / per-uid keys)  snapshot strips proxies
                                           │
-src/nutrition.ts  src/shopping.ts         ▼
-  pure functions over AppState        getStore() in views
+src/nutrition.ts  src/shopping.ts         ▼          src/status.ts
+  pure functions over AppState        getStore()       status(macro,v,t) →
+                                       in views        "under"|"near"|"over"
+                                                       mealCategory(meal,ings)
+                                                       dotClass(category)
 
   ┌─ src/firebase/ ────────────────────────────────────────────┐
   │  config.ts   readEnv() + lazy initializeApp/getAuth/getDb  │
@@ -73,15 +110,18 @@ src/nutrition.ts  src/shopping.ts         ▼
   │              deleteShared (top-level shared_* collections) │
   └────────────────────────────────────────────────────────────┘
 
-                  ┌──────────────────────────────────────────┐
-Add-ingredient ──▶│ src/ui/foodSearchPanel.ts                │
-flows in both     │   text search (debounced) + Scan button  │
-ingredients.ts ──▶│   ↓                          ↓           │
-and meals.ts      │   src/api/foodSearch.ts      src/ui/     │
-                  │   (OFF: search + lookup)     barcodeScanner.ts
-                  │                              (lazy-loaded,
-                  │                               @zxing/browser)
-                  └──────────────────────────────────────────┘
+  ┌─ src/ui/ ──────────────────────────────────────────────────┐
+  │  components.ts      html`` tagged template (auto-escapes), │
+  │                     esc(), raw(), confirmAction()          │
+  │  styles.css         design tokens + custom Greenhouse layer│
+  │  authGate.ts        signed-out sign-in form                │
+  │  foodSearchPanel.ts text search + Scan, used by ingredients│
+  │                     view AND meals editor                  │
+  │  mealPicker.ts      <dialog class="meal-picker"> wired by  │
+  │                     every Week slot's ＋/› button.         │
+  │                     openMealPicker({day, slotId}, after).  │
+  │  barcodeScanner.ts  lazy-loaded ZXing camera scanner       │
+  └────────────────────────────────────────────────────────────┘
 ```
 
 Views mutate the store directly (e.g. `store.ingredients.push(...)`).
@@ -101,9 +141,17 @@ remote updates back to the server).
   `raw(prebuilt)` only when intentionally injecting pre-escaped HTML.
 - **Mutate via the store, never via local state.** The render loop hangs
   off Alpine's reactivity — local-only state won't trigger saves.
-- **Pure logic in `nutrition.ts` / `shopping.ts`.** No DOM, no Alpine.
+- **Pure logic in `nutrition.ts` / `shopping.ts` / `status.ts`.** No
+  DOM, no Alpine.
 - **Destructive actions confirm.** Use `confirmAction(message)` from
   `ui/components.ts`.
+- **Status colours go through `status.ts`.** Compute the key with
+  `status(macro, value, target)` and render via the `.v-under` /
+  `.v-near` / `.v-over` classes — never inline a colour. Themes
+  cascade automatically.
+- **Theme writes go through `theme.ts`.** Use `applyTheme(pref)`;
+  don't poke `[data-theme]` directly from views. `"auto"` removes
+  the attribute so `prefers-color-scheme` takes over.
 - **No comments that just restate the code.** A `// why` line for a
   subtle constraint is fine; "// loops over items" is noise.
 - **Bundled docs via `?raw`.** `IMPORT.md` is imported by
@@ -153,10 +201,14 @@ into our six ingredient categories via `guessCategory`.
 
 | Task | Touch points |
 | --- | --- |
-| New view | Add `src/views/<name>.ts`, register in `ROUTES` in `main.ts`, add a link to the nav (auto-generated from `ROUTES`) |
+| New view | Add `src/views/<name>.ts`, register in `ROUTES` in `main.ts` (with a `ctx: () => …` caption for the mobile top bar), and the nav fills both `.nav .links` and `.mtabs` from that array. |
 | Tweak default meal slots | `src/types.ts` (`DEFAULT_SLOTS`). Live slots are stored in `state.slots` and editable per-user from Settings. |
-| New ingredient category | `src/types.ts` (`INGREDIENT_CATEGORIES`) — listed categories drive the shopping-list grouping order. Also update `guessCategory` in `src/api/foodSearch.ts` so Open Food Facts hits map into it. |
-| Storage shape change | Bump key in `src/state.ts` (`STORAGE_KEY`) **and** bump `CACHE_VERSION` in `public/sw.js`. Update `normalise`. Add the field to the `void s.foo` list in `main.ts` and to `snapshot()` / `replaceState()` / `reseedStore()` in `store.ts`. If the new field belongs in the JSON-import payload too, also update `validateImport` and `mergeImport` (and `IMPORT.md`). |
+| New ingredient category | `src/types.ts` (`INGREDIENT_CATEGORIES`) — listed categories drive the shopping-list grouping order. Also update `guessCategory` in `src/api/foodSearch.ts` so Open Food Facts hits map into it, add a `--cat-<slug>` swatch + `.cat-tag.<slug>` background in `src/ui/styles.css`, and (if the slug isn't one of the brief's five) consider whether the filter pill row in `src/views/ingredients.ts` (`PILL_CATEGORIES`) should include it. |
+| Tweak per-macro status thresholds | `src/status.ts`'s `status()` switch (kcal / protein / carbs / fat each have their own band). Keep it asymmetric — the design choice is "only flag what actually matters." |
+| New status colour shade | `src/ui/styles.css` `--status-{under,near,over}` (both light + dark `[data-theme="dark"]` blocks). |
+| Storage shape change | Bump key in `src/state.ts` (`STORAGE_KEY`) **and** bump `CACHE_VERSION` in `public/sw.js`. Append the old key to `LEGACY_STORAGE_KEYS` so old saves auto-migrate. Update `normalise()`. Add the field to the `void s.foo` list in `main.ts` and to `snapshot()` / `replaceState()` / `reseedStore()` in `store.ts`. If the new field belongs in the JSON-import payload too, also update `validateImport` and `mergeImport` (and `IMPORT.md`). |
+| Add a new persisted preference | Same as "Storage shape change", plus surface a control in the Settings dialog (`src/views/settings.ts`). If it affects rendering globally, write a thin helper module (see `theme.ts` for the pattern) so views don't poke the DOM directly. |
+| New `<dialog>` | Mount the element in `index.html`. In `src/ui/styles.css`, **scope every custom rule that sets `display` / position / size to `dialog.<class>[open]`** — Pico classless's `dialog { display: flex; backdrop-filter: … }` will otherwise paint the closed dialog full-screen on top of the page. Backdrop click via `e.target === dialog` (don't use `{ once: true }` — inside clicks consume the listener). |
 | New shareable kind | Add to `ShareKind` in `src/firebase/sharing.ts`, define a `Shared*` interface, add a tab in `src/views/share.ts`, and update `firestore.rules`. |
 | Change custom domain | DNS `CNAME` at the registrar, `public/CNAME`, Settings → Pages → Custom domain, and `base` in `vite.config.ts` (`/` for a subdomain root, `/<subpath>/` if you ever subpath-serve again) |
 
@@ -170,7 +222,7 @@ into our six ingredient categories via `guessCategory`.
 - Auth observer lives in `src/firebase/auth.ts`. `initAuth()` registers
   `onAuthStateChanged`; consumers subscribe via `onAuthChange()`.
 - Sync loop in `src/firebase/sync.ts`:
-  1. On sign-in, switch the localStorage scope to `mealprep:v2:{uid}`.
+  1. On sign-in, switch the localStorage scope to `mealprep:v3:{uid}`.
   2. Read `/users/{uid}/state/main` from Firestore.
   3. If both local and remote have data and they differ, prompt the
      user (push-local vs use-cloud) via `window.confirm`:
@@ -301,6 +353,45 @@ bundle.
   security lives in (a) the disabled sign-up toggle, (b) Firestore
   rules, and (c) the authorized-domains list. Treat the key like a
   project identifier, not a credential.
+- **Pico classless paints closed `<dialog>` elements.** Pico's
+  classless build ships `dialog { display: flex; position: fixed;
+  inset: 0; backdrop-filter: var(--pico-modal-overlay-backdrop-filter)
+  }` plus `dialog:not([open]) { display: none }` at the same
+  specificity. Any later custom rule that sets `display` on the same
+  selector — including a media-query override like
+  `@media (min-width: 920px) { dialog.meal-picker { display: grid } }`
+  — wins the cascade for the **closed** dialog too, blurring the page
+  on first load. `src/ui/styles.css` restates `dialog:not([open])
+  { display: none !important }` near the top and resets Pico's
+  `backdrop-filter` / overlay `background`; keep that guard in place
+  and always qualify your own `display`-setting dialog rules with
+  `[open]`.
+- **Pico injects a magnifying-glass on `[type=search]`.** Classless
+  Pico sets a background image and a matching `padding-inline-start`
+  to reserve space for it. `src/ui/styles.css` clears both so app-
+  level inline padding doesn't sit on top of the icon — the design
+  uses plain inputs without icons. If you want the icon back, undo
+  that reset in CSS rather than per-input.
+- **Circular icon buttons need `padding: 0; line-height: 1`.** Pico's
+  default `button { padding: 0.75rem 1rem }` is asymmetric, and with
+  a fixed `width`/`height` + `box-sizing: border-box` it squishes the
+  glyph off-centre. All `.gear` / `.close` / `.plus` / `.chevron`
+  rules in `styles.css` reset both — match that pattern for any new
+  circular button.
+- **Backdrop click on a `<dialog>`: use `e.target === dialog`, not
+  geometry.** Native dialogs dispatch the click with `target === dialog`
+  when the backdrop area is hit; inner clicks bubble with the inner
+  element as `target`. Don't use `addEventListener("click", …, { once:
+  true })` either — an inner click consumes the listener, and you lose
+  backdrop-to-close after that. Use a `dialog.dataset.backdropBound`
+  guard to bind once (see `mealPicker.ts` / `settings.ts`).
+- **Mobile chrome and desktop nav both ship every page.** `index.html`
+  has both `.nav` (desktop) and `.mtop` + `.mtabs` (mobile); CSS hides
+  the inactive set at 920 px. The Week view also renders both the
+  mobile daystrip + today card AND the desktop 7-day grid — same
+  rule. If you add a new surface that only makes sense at one
+  viewport, mirror this pattern (render-both-hide-one) rather than
+  branching on `matchMedia` — it survives resize without re-rendering.
 
 ## Branching & PRs
 
@@ -312,19 +403,88 @@ bundle.
 
 ## Open items / not yet done
 
-- "Duplicate previous week" button shows a placeholder — needs week
-  history first (listed under Future enhancements in `spec.md`).
+- "Duplicate previous week" button shows a placeholder alert — needs
+  week history first (listed under Future enhancements in `spec.md`).
 - PWA icons are placeholders generated by `scripts/generate-icons.mjs`.
-  Replace the PNGs or edit the script.
+  Replace the PNGs or edit the script. The brief picked the
+  Greenhouse palette; icons should match (sage `#5e8a4d` on the warm
+  `#f7f1e5` background) but haven't been regenerated.
 - Acceptance checklist in `spec.md` is unticked; tick after running
   through it on a real device.
-- Bundle size has grown with Firebase to ~143 KB gzipped for the main
-  chunk. Code-splitting Firebase Auth + Firestore out of the boot
-  path is a possible win; not pursued yet because cold-start sign-in
-  needs them immediately.
+- **Settings sections deliberately omitted from the brief.** The
+  brief sketched "Sharing circle" (list of invited users), "Week
+  starts on" segment, and "Compact density" toggle. None are wired —
+  the app doesn't track an invited-users list (admin provisions via
+  Firebase console), the week is hard-coded Monday-start, and the
+  brief didn't define what compact mode would do. Surface only if /
+  when the underlying data model actually exists.
+- **Meal-picker "＋ New meal" loses slot context.** Tapping the
+  footer's `＋ New meal` navigates to `#/meals` (see
+  `setMealPickerCreateHook` in `main.ts`). The active `{day, slotId}`
+  is dropped, so the user has to come back and pick the new meal
+  manually. A future iteration could persist the target and auto-
+  assign after the new meal is saved.
+- **Mobile Meals doesn't push-navigate list → detail.** The Meals
+  view uses the desktop `.meals-d` master-detail markup at every
+  viewport; on mobile the detail panel stacks below the list rather
+  than replacing it. The brief expected a tap-to-detail flow. Easy
+  follow-up: add a `mobileDetailOpen` flag and toggle a body class.
+- **Meal-picker "Recent" is a proxy.** No pick-history is persisted;
+  it's derived from the most-used meals in the current week. Fine for
+  the small-circle model but won't survive a fresh week.
+- Bundle size sits around ~148 KB gzipped for the main chunk after
+  the Greenhouse refresh (Firebase + Alpine + the design layer).
+  Code-splitting Firebase Auth + Firestore out of the boot path is a
+  possible win; not pursued because cold-start sign-in needs them
+  immediately.
 - No password-reset / forgot-password UI. By design — accounts are
   admin-provisioned, and the owner resets passwords in the Firebase
   console. Add only if the user base outgrows that model.
+
+## Closing a session ("close chat")
+
+When the user says **"close chat"** (or "wrap up", "ship it",
+"finalise"), treat it as a single instruction to leave the repo in a
+clean, shippable state with no further questions. Run this checklist
+end-to-end without prompting:
+
+1. **Reconcile docs with code.** Walk through every change made in the
+   conversation and update:
+   - `CLAUDE.md` — keep the "Stack & key decisions" table, the
+     architecture diagram, "Common changes", "Gotchas", "Open items"
+     and "Where to find things" sections accurate. Add any new module
+     to the diagram + the lookup table. Add any non-obvious trap you
+     hit during the session to "Gotchas" (with a one-line
+     reproduction recipe).
+   - `spec.md` — update if the data model, view list, persistence
+     key, default state, or PWA cache version changed.
+   - `IMPORT.md` — update only if `validateImport` / `mergeImport`
+     widened the accepted payload.
+   - `README.md` — update only if first-run / setup steps changed.
+2. **Build green.** Run `npm run typecheck` then `npm run build`. If
+   either fails, fix the failure before continuing — don't ship a red
+   build.
+3. **Commit.** Stage everything with `git add -A`, then `git status`
+   to confirm nothing sensitive (`.env`, credentials, build artifacts
+   that aren't already gitignored) is included. Compose a commit
+   message in the project's existing style — short imperative subject,
+   then a body that explains *why* not just *what*. Do **not** add
+   marketing-style headers or co-author trailers; the existing log
+   uses plain prose only. (See recent `git log` for examples.)
+4. **Push.** `git push -u origin <branch>` on the working branch from
+   the harness's "Git Development Branch Requirements" block. Retry
+   up to 4× with exponential backoff (2s, 4s, 8s, 16s) on network
+   failure; never force-push, never skip hooks.
+5. **Do not open a PR.** PRs are explicit-only — the user will ask if
+   they want one. Do not run `mcp__github__create_pull_request`.
+6. **Summarise.** Reply with a tight summary: the commit SHA, the
+   one-line subject of each commit pushed this session, the
+   touched-file count, and any deferred items the user should know
+   about. Keep it under ~150 words.
+
+The point of this protocol is that a fresh chat opening this repo
+tomorrow should be able to orient from `CLAUDE.md` alone, without
+re-reading the conversation history.
 
 ## Where to find things
 
@@ -334,15 +494,19 @@ bundle.
 | Import JSON schema + prompt | `IMPORT.md` |
 | All shared types | `src/types.ts` |
 | Anything render-related | `src/views/<name>.ts` + `src/ui/` |
+| Design tokens + custom CSS | `src/ui/styles.css` (single combined file) |
+| Per-macro status thresholds + category dots | `src/status.ts` |
+| Theme application | `src/theme.ts` (writes `[data-theme]` on `<html>`) |
 | Anything maths-related | `src/nutrition.ts`, `src/shopping.ts` |
-| State / persistence | `src/state.ts`, `src/store.ts` |
+| State / persistence / import / migration | `src/state.ts`, `src/store.ts` |
 | Auth + cloud sync | `src/firebase/{config,auth,sync,sharing}.ts`, `firestore.rules` |
 | Sign-in form | `src/ui/authGate.ts` |
 | Sharing UI | `src/views/share.ts` |
-| Routing / startup | `src/main.ts` |
+| Routing / startup / nav rendering / mtop context | `src/main.ts` |
 | Open Food Facts integration | `src/api/foodSearch.ts` (search + barcode lookup) |
 | Food-search UI (shared) | `src/ui/foodSearchPanel.ts` |
+| Meal picker dialog | `src/ui/mealPicker.ts` |
 | Barcode camera scanner | `src/ui/barcodeScanner.ts` (lazy-loaded) |
 | PWA shell + custom domain | `public/manifest.webmanifest`, `public/sw.js`, `public/CNAME` |
-| HTTPS bounce / app shell | `index.html` |
+| HTTPS bounce / app shell + dialog mounts | `index.html` |
 | CI / deploy | `.github/workflows/deploy.yml` |
