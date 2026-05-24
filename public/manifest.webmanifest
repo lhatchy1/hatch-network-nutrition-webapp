@@ -1,12 +1,12 @@
 {
-  "name": "Meal Prep Planner",
-  "short_name": "Meal Prep",
+  "name": "Hatch · Food planner",
+  "short_name": "Hatch",
   "description": "Plan your week's meals, track nutrition, and generate a shopping list.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#1095c1",
+  "background_color": "#f7f1e5",
+  "theme_color": "#f7f1e5",
   "icons": [
     { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },

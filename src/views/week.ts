@@ -1,109 +1,302 @@
 import { getStore } from "../store";
 import { DAYS } from "../types";
-import type { DayKey, SlotKey } from "../types";
-import { dayTotals, fmtMacro, weekAverages } from "../nutrition";
+import type { DayKey } from "../types";
+import { dayTotals, fmtMacro, mealNutrition } from "../nutrition";
 import { emptyWeek } from "../state";
 import { esc, html, raw, confirmAction } from "../ui/components";
 import { shareWeekPlan, isSignedIn } from "../firebase/sharing";
+import { status, statusClass, mealCategory, dotClass } from "../status";
+import type { Nutrition } from "../types";
+import { openMealPicker } from "../ui/mealPicker";
+
+// Active day for the mobile single-day view. Lives outside the store on
+// purpose — it's an ephemeral viewport concern, not user data to persist.
+let activeDay: DayKey = currentDayKey();
+
+function currentDayKey(): DayKey {
+  const idx = (new Date().getDay() + 6) % 7; // Mon=0
+  return DAYS[idx].key;
+}
 
 export function renderWeek(target: HTMLElement): void {
   const store = getStore();
-  const cells: string[] = [];
   const slots = store.slots;
+  const t = store.targets;
 
-  // Header row: blank corner + day labels
-  cells.push(`<div class="cell head"></div>`);
-  for (const { label } of DAYS) cells.push(`<div class="cell head">${esc(label)}</div>`);
-
-  // Slot rows
-  for (const slot of slots) {
-    cells.push(`<div class="cell slot-label">${esc(slot.label)}</div>`);
-    for (const { key: day } of DAYS) {
-      cells.push(`<div class="cell">${slotSelect(day, slot.id)}</div>`);
-    }
+  if (slots.length === 0) {
+    target.innerHTML = html`
+      <div class="page-h">
+        <span class="eyebrow">This week</span>
+        <h1>Week</h1>
+      </div>
+      <p class="muted" style="padding: 0 18px;">
+        You have no meal slots configured. Open <strong>Settings</strong> and add a slot
+        (e.g. Breakfast, Lunch, Snack) to start planning.
+      </p>
+    `;
+    return;
   }
 
-  // Per-day totals row
-  cells.push(`<div class="cell slot-label totals">Day</div>`);
-  for (const { key: day } of DAYS) {
-    const t = dayTotals(store, day);
-    cells.push(
-      `<div class="cell totals">
-        <div>${fmtMacro(t.kcal)} kcal</div>
-        <div class="muted">${fmtMacro(t.protein)}g P</div>
-      </div>`,
-    );
-  }
+  // Per-day totals + statuses for the daystrip + today card.
+  const totalsByDay = new Map<DayKey, Nutrition>();
+  for (const { key } of DAYS) totalsByDay.set(key, dayTotals(store, key));
 
-  const avg = weekAverages(store);
-  const kcalClass = vsTarget(avg.kcal, store.targets.kcal, 100);
-  const proteinClass = vsTarget(avg.protein, store.targets.protein, 10, true);
+  const today = activeDay;
+  const todayLabel = DAYS.find((d) => d.key === today)?.label ?? "";
+  const todayTotals = totalsByDay.get(today)!;
 
-  const emptySlots = slots.length === 0;
+  const filledCount = slots.reduce(
+    (n, s) => (store.week[today]?.[s.id] ? n + 1 : n),
+    0,
+  );
 
   target.innerHTML = html`
-    <div class="view-header">
-      <h2>Week</h2>
-      <div class="row">
-        <button id="share-week" class="outline">Share this week</button>
-        <button id="dup-week" class="outline">Duplicate previous week</button>
-        <button id="clear-week" class="outline secondary">Clear week</button>
+    <div class="page-h">
+      <div>
+        <span class="eyebrow">This week</span>
+        <h1>${esc(longDayName(todayLabel))}</h1>
+      </div>
+      <div class="row" style="gap: 6px;">
+        <button class="btn" id="share-week">Share week</button>
+        <button class="btn ghost" id="dup-week">Duplicate previous</button>
+        <button class="btn danger" id="clear-week">Clear week</button>
       </div>
     </div>
-    ${raw(
-      emptySlots
-        ? `<p class="muted">You have no meal slots configured. Open <strong>Settings</strong> and add a slot (e.g. Breakfast, Lunch, Snack) to start planning.</p>`
-        : `<div class="week-wrap"><div class="week-grid" style="grid-template-rows: auto repeat(${slots.length}, auto) auto">${cells.join("")}</div></div>`,
-    )}
-    <h3 style="margin-top: 1.5rem">Weekly average</h3>
-    <p>
-      <span class="${kcalClass}">${fmtMacro(avg.kcal)} kcal</span>
-      <small class="muted">target ${store.targets.kcal}</small>
-      ·
-      <span class="${proteinClass}">${fmtMacro(avg.protein)}g protein</span>
-      <small class="muted">target ${store.targets.protein}</small>
-    </p>
+
+    ${raw(renderDaystrip(totalsByDay, t))}
+    ${raw(renderTodayCard(today, todayLabel, filledCount, todayTotals, t))}
+    ${raw(renderDesktopGrid(totalsByDay, t))}
   `;
 
   wire(target);
 }
 
-function slotSelect(day: DayKey, slotId: SlotKey): string {
-  const store = getStore();
-  const eligible = [...store.meals].sort((a, b) => a.name.localeCompare(b.name));
-  const current = store.week[day]?.[slotId] ?? null;
-  return `<select data-day="${day}" data-slot="${esc(slotId)}">
-    <option value="">— empty —</option>
-    ${eligible
-      .map(
-        (m) =>
-          `<option value="${esc(m.id)}" ${current === m.id ? "selected" : ""}>${esc(m.name)}</option>`,
-      )
-      .join("")}
-  </select>`;
+function renderDaystrip(
+  totalsByDay: Map<DayKey, Nutrition>,
+  t: { kcal: number; protein: number; carbs: number; fat: number },
+): string {
+  const today = currentDayKey();
+  const monday = mondayOf(new Date());
+  const buttons = DAYS.map((d, i) => {
+    const totals = totalsByDay.get(d.key)!;
+    const dayStatus = worstStatus(totals, t);
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + i);
+    const isCur = activeDay === d.key;
+    const hasMeals = totals.kcal > 0;
+    return `<button class="d ${isCur ? "cur" : ""}" data-day="${d.key}" role="tab" aria-selected="${isCur}">
+      <span class="lt">${d.label.charAt(0)}</span>
+      <span class="num">${date.getDate()}</span>
+      ${hasMeals ? `<span class="status v-${dayStatus}" aria-hidden="true"></span>` : ""}
+      ${d.key === today && !isCur ? "" : ""}
+    </button>`;
+  }).join("");
+  return `<div class="daystrip" role="tablist" aria-label="Day of week">${buttons}</div>`;
 }
 
-// Colour vs target. For kcal we colour by distance from target;
-// for protein, only being under target is bad.
-function vsTarget(value: number, target: number, tol: number, higherIsOk = false): string {
-  if (target <= 0) return "";
-  const diff = value - target;
-  if (Math.abs(diff) <= tol) return "macro-good";
-  if (higherIsOk && diff > 0) return "macro-good";
-  if (diff > 0) return "macro-warn";
-  return "macro-bad";
+function renderTodayCard(
+  today: DayKey,
+  todayLabel: string,
+  filled: number,
+  totals: Nutrition,
+  t: { kcal: number; protein: number; carbs: number; fat: number },
+): string {
+  const store = getStore();
+  const slots = store.slots;
+  const dateLabel = formatDayDate(today);
+
+  const kcalKey = status("kcal", totals.kcal, t.kcal);
+  const protKey = status("protein", totals.protein, t.protein);
+  const carbKey = status("carbs", totals.carbs, t.carbs);
+  const fatKey = status("fat", totals.fat, t.fat);
+
+  return `<article class="today-card" id="today">
+    <header class="day-h">
+      <div class="dn">${esc(longDayName(todayLabel))} · ${esc(dateLabel)}</div>
+      <div class="dt">${filled}/${slots.length} slots filled</div>
+    </header>
+
+    <div class="rings">
+      ${ring(totals.kcal, t.kcal, kcalKey, "kcal", formatInt(totals.kcal))}
+      ${ring(totals.protein, t.protein, protKey, "protein", formatInt(totals.protein) + "g")}
+      ${ring(totals.carbs, t.carbs, carbKey, "carbs", formatInt(totals.carbs) + "g")}
+      ${ring(totals.fat, t.fat, fatKey, "fat", formatInt(totals.fat) + "g")}
+    </div>
+
+    <div class="slots">
+      ${slots
+        .map((s) => {
+          const mealId = store.week[today]?.[s.id] ?? null;
+          const meal = mealId ? store.meals.find((m) => m.id === mealId) : null;
+          if (!meal) {
+            return `<div class="slot empty" data-slot="${esc(s.id)}">
+              <div class="body">
+                <div class="lab">${esc(s.label)}</div>
+                <div class="nm">Not planned</div>
+              </div>
+              <button class="plus" data-pick="${esc(s.id)}" aria-label="Pick a meal">＋</button>
+            </div>`;
+          }
+          const cat = mealCategory(meal, store.ingredients);
+          const n = mealNutrition(meal, store.ingredients);
+          return `<div class="slot" data-slot="${esc(s.id)}">
+            <div class="body">
+              <div class="lab">${esc(s.label)}</div>
+              <div class="nm">
+                <span class="${dotClass(cat)}" aria-hidden="true"></span>
+                ${esc(meal.name)}
+              </div>
+            </div>
+            <div class="kc">${fmtMacro(n.kcal)} · ${fmtMacro(n.protein)}P</div>
+            <button class="chevron" data-pick="${esc(s.id)}" aria-label="Open meal">›</button>
+          </div>`;
+        })
+        .join("")}
+    </div>
+  </article>`;
+}
+
+function renderDesktopGrid(
+  totalsByDay: Map<DayKey, Nutrition>,
+  t: { kcal: number; protein: number; carbs: number; fat: number },
+): string {
+  const store = getStore();
+  const slots = store.slots;
+  const today = currentDayKey();
+  const monday = mondayOf(new Date());
+
+  const cols = DAYS.map((d, i) => {
+    const totals = totalsByDay.get(d.key)!;
+    const isCur = d.key === today;
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + i);
+
+    const kcalKey = status("kcal", totals.kcal, t.kcal);
+    const protKey = status("protein", totals.protein, t.protein);
+
+    const mealRows = slots
+      .map((s) => {
+        const mealId = store.week[d.key]?.[s.id] ?? null;
+        const meal = mealId ? store.meals.find((m) => m.id === mealId) : null;
+        if (!meal) {
+          return `<button class="meal empty" data-day="${d.key}" data-pick="${esc(s.id)}">
+            <div class="lab">${esc(s.label)}</div>
+            <div class="nm">Not planned</div>
+          </button>`;
+        }
+        const cat = mealCategory(meal, store.ingredients);
+        const n = mealNutrition(meal, store.ingredients);
+        return `<button class="meal" data-day="${d.key}" data-pick="${esc(s.id)}">
+          <div class="lab">${esc(s.label)}</div>
+          <div class="nm"><span class="${dotClass(cat)} sm"></span>${esc(meal.name)}</div>
+          <div class="kc">${fmtMacro(n.kcal)} · ${fmtMacro(n.protein)}P</div>
+        </button>`;
+      })
+      .join("");
+
+    return `<article class="day-col ${isCur ? "cur" : ""}">
+      <header class="h"><div class="dn">${d.label}</div><div class="dt">${date.getDate()}</div></header>
+      ${mealRows}
+      <div class="day-totals">
+        <div class="big v-${kcalKey}">${formatInt(totals.kcal)}</div>
+        <div class="of">/ ${t.kcal.toLocaleString()} kcal</div>
+        <div class="macros">
+          <span>P <b class="v-${protKey}">${formatInt(totals.protein)}</b></span>
+          <span>C <b>${formatInt(totals.carbs)}</b></span>
+          <span>F <b>${formatInt(totals.fat)}</b></span>
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+
+  return `<div class="week-grid">${cols}</div>`;
+}
+
+function ring(
+  value: number,
+  target: number,
+  key: ReturnType<typeof status>,
+  label: string,
+  display: string,
+): string {
+  const pct = target > 0 ? Math.max(0, Math.min(100, (value / target) * 100)) : 0;
+  return `<div class="r">
+    <svg class="ring" width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+      <circle class="bg" cx="18" cy="18" r="16" fill="none" stroke-width="4"></circle>
+      <circle class="fg ${statusClass(key)}" cx="18" cy="18" r="16" fill="none" stroke-width="4"
+              stroke-dasharray="${pct.toFixed(1)} 100"></circle>
+    </svg>
+    <div class="v">${esc(display)}</div>
+    <div class="k">${esc(label)}</div>
+  </div>`;
+}
+
+function worstStatus(
+  totals: Nutrition,
+  t: { kcal: number; protein: number; carbs: number; fat: number },
+): "under" | "near" | "over" {
+  const keys = [
+    status("kcal", totals.kcal, t.kcal),
+    status("protein", totals.protein, t.protein),
+    status("carbs", totals.carbs, t.carbs),
+    status("fat", totals.fat, t.fat),
+  ];
+  if (keys.includes("over")) return "over";
+  if (keys.includes("under")) return "under";
+  return "near";
+}
+
+function mondayOf(d: Date): Date {
+  const out = new Date(d);
+  const day = out.getDay();
+  const diff = (day + 6) % 7;
+  out.setDate(out.getDate() - diff);
+  out.setHours(0, 0, 0, 0);
+  return out;
+}
+
+function formatDayDate(key: DayKey): string {
+  const monday = mondayOf(new Date());
+  const idx = DAYS.findIndex((d) => d.key === key);
+  const d = new Date(monday);
+  d.setDate(monday.getDate() + idx);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function longDayName(label: string): string {
+  // "Mon" → "Monday"
+  const map: Record<string, string> = {
+    Mon: "Monday",
+    Tue: "Tuesday",
+    Wed: "Wednesday",
+    Thu: "Thursday",
+    Fri: "Friday",
+    Sat: "Saturday",
+    Sun: "Sunday",
+  };
+  return map[label] ?? label;
+}
+
+function formatInt(n: number): string {
+  return Math.round(n).toLocaleString();
 }
 
 function wire(target: HTMLElement): void {
   const store = getStore();
 
-  target.querySelectorAll<HTMLSelectElement>("select[data-day]").forEach((sel) => {
-    sel.addEventListener("change", () => {
-      const day = sel.dataset.day as DayKey;
-      const slotId = sel.dataset.slot as SlotKey;
-      if (!store.week[day]) store.week[day] = {};
-      store.week[day][slotId] = sel.value || null;
+  target.querySelectorAll<HTMLButtonElement>(".daystrip .d").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      activeDay = btn.dataset.day as DayKey;
       renderWeek(target);
+    });
+  });
+
+  // Mobile + desktop slot picker triggers — both data-pick buttons.
+  target.querySelectorAll<HTMLElement>("[data-pick]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const slotId = btn.dataset.pick!;
+      const day = (btn.dataset.day as DayKey) ?? activeDay;
+      openMealPicker({ day, slotId }, () => renderWeek(target));
     });
   });
 
@@ -119,7 +312,12 @@ function wire(target: HTMLElement): void {
       alert("Sign in to share content.");
       return;
     }
-    if (!confirmAction("Share this week plan to the public area? It will include the meals and ingredients used.")) return;
+    if (
+      !confirmAction(
+        "Share this week plan to the public area? It will include the meals and ingredients used.",
+      )
+    )
+      return;
     try {
       await shareWeekPlan(store);
       alert("Week plan shared. Open the Share tab to see it.");
@@ -128,9 +326,38 @@ function wire(target: HTMLElement): void {
     }
   });
 
-  // "Duplicate previous week" — no week history yet, so this re-applies the
-  // current week to itself (no-op). Kept for future history support.
   target.querySelector("#dup-week")?.addEventListener("click", () => {
-    alert("Week history isn't tracked yet — this will copy from a previous week once history is added.");
+    alert(
+      "Week history isn't tracked yet — this will copy from a previous week once history is added.",
+    );
+  });
+
+  // Swipe gestures on the today card (mobile).
+  const card = target.querySelector<HTMLElement>("#today");
+  if (card) wireSwipe(card, target);
+}
+
+function wireSwipe(card: HTMLElement, target: HTMLElement): void {
+  let startX = 0;
+  let startY = 0;
+  let tracking = false;
+  card.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+  }, { passive: true });
+  card.addEventListener("touchend", (e) => {
+    if (!tracking) return;
+    tracking = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    if (Math.abs(dx) < 40 || Math.abs(dy) > Math.abs(dx)) return;
+    const idx = DAYS.findIndex((d) => d.key === activeDay);
+    const nextIdx = dx < 0 ? Math.min(6, idx + 1) : Math.max(0, idx - 1);
+    if (nextIdx === idx) return;
+    activeDay = DAYS[nextIdx].key;
+    renderWeek(target);
   });
 }

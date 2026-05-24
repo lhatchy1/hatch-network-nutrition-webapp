@@ -8,31 +8,30 @@ import {
   uid as newId,
 } from "../state";
 import { esc, html, raw, confirmAction } from "../ui/components";
-import type { MealSlot } from "../types";
+import type { MealSlot, ThemePref } from "../types";
 import { currentUser, signOut as authSignOut } from "../firebase/auth";
-// Bundled at build time so the in-app prompt and the repo doc never drift.
 import importPrompt from "../../IMPORT.md?raw";
+import { applyTheme } from "../theme";
+
+interface DialogState {
+  editingTarget: keyof ReturnType<typeof getStore>["targets"] | null;
+  editingSlotId: string | null;
+}
+const state: DialogState = { editingTarget: null, editingSlotId: null };
 
 export function openSettings(dialog: HTMLDialogElement, onChange: () => void): void {
   render(dialog, onChange);
   if (!dialog.open) dialog.showModal();
 
-  // Close on backdrop click. Re-bound each open to match the current article.
-  dialog.addEventListener(
-    "click",
-    (e) => {
-      const article = dialog.querySelector("article");
-      if (!article) return;
-      const rect = (article as HTMLElement).getBoundingClientRect();
-      const inside =
-        e.clientX >= rect.left &&
-        e.clientX <= rect.right &&
-        e.clientY >= rect.top &&
-        e.clientY <= rect.bottom;
-      if (!inside) dialog.close();
-    },
-    { once: true },
-  );
+  // Backdrop click → close. Native <dialog> dispatches the click with
+  // target === dialog when the backdrop region is hit; inner clicks bubble
+  // with the inner element as the target.
+  if (!dialog.dataset.backdropBound) {
+    dialog.addEventListener("click", (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+    dialog.dataset.backdropBound = "1";
+  }
 }
 
 function render(dialog: HTMLDialogElement, onChange: () => void): void {
@@ -40,85 +39,127 @@ function render(dialog: HTMLDialogElement, onChange: () => void): void {
   const user = currentUser();
 
   dialog.innerHTML = html`
-    <article>
-      <header>
-        <button aria-label="Close" rel="prev" id="settings-close"></button>
-        <h3>Settings</h3>
-      </header>
+    <header class="hdr">
+      <h2>Settings</h2>
+      <button class="close" aria-label="Close" id="settings-close">✕</button>
+    </header>
+    <div class="body">
+      ${raw(user ? renderAccountGroup(user.email ?? "", store.profile.displayName) : "")}
 
-      ${raw(user ? renderAccountSection(user.email ?? "", store.profile.displayName) : "")}
+      <!-- Macro targets -->
+      <section class="settings-group">
+        <div class="grp-h"><span>Daily macro targets</span><span>per day</span></div>
+        <div class="macro-target-grid">
+          ${raw(macroTile("kcal", "kcal", store.targets.kcal, ""))}
+          ${raw(macroTile("protein", "P", store.targets.protein, "g"))}
+          ${raw(macroTile("carbs", "C", store.targets.carbs, "g"))}
+          ${raw(macroTile("fat", "F", store.targets.fat, "g"))}
+        </div>
+      </section>
 
-      <h4>Daily targets</h4>
-      <div class="row">
-        <label class="grow">kcal
-          <input id="set-kcal" type="number" min="0" step="50" value="${store.targets.kcal}" />
-        </label>
-        <label class="grow">protein (g)
-          <input id="set-protein" type="number" min="0" step="5" value="${store.targets.protein}" />
-        </label>
-      </div>
+      <!-- Day structure -->
+      <section class="settings-group">
+        <div class="grp-h"><span>Day structure</span></div>
+        ${raw(renderSlotsBlock(store.slots))}
+      </section>
 
-      <h4>Meal slots</h4>
-      <p class="muted"><small>The rows on your week grid. Add as many as you want (Breakfast, Snack, Pre-workout, etc.). Deleting a slot also clears any meals assigned to it.</small></p>
-      ${raw(renderSlots(store.slots))}
-      <div class="row">
-        <input id="new-slot-label" placeholder="e.g. Breakfast" class="grow" />
-        <button id="add-slot" class="outline">+ Add slot</button>
-      </div>
+      <!-- Appearance -->
+      <section class="settings-group">
+        <div class="grp-h"><span>Appearance</span></div>
+        <div class="row">
+          <span class="lbl">Theme</span>
+          <div class="seg" role="radiogroup" aria-label="Theme">
+            <button class="o ${store.theme === "light" ? "cur" : ""}" data-theme-set="light">Light</button>
+            <button class="o ${store.theme === "dark" ? "cur" : ""}" data-theme-set="dark">Dark</button>
+            <button class="o ${store.theme === "auto" ? "cur" : ""}" data-theme-set="auto">Auto</button>
+          </div>
+        </div>
+      </section>
 
-      <h4>Backup</h4>
-      <div class="row">
-        <button id="export-btn">Export JSON</button>
-      </div>
-      <p class="muted"><small>${user ? "Your data also syncs automatically to your account — export is a manual backup on top of that." : "Drop the exported file in iCloud/Drive for a manual cross-device backup. Sign in to enable automatic cross-device sync."}</small></p>
-
-      <h4>Import ingredients & meals</h4>
-      <p class="muted"><small>Bulk-add ingredients and meals from a JSON file (e.g. one generated by a chat — see <strong>Copy import prompt</strong> below). Your slots, week plan, targets and shared items are untouched. Use the <strong>Share</strong> tab to move week plans between accounts.</small></p>
-      <div class="row">
-        <button id="import-btn" class="outline">Import JSON…</button>
-        <input id="import-file" type="file" accept="application/json,.json" hidden />
-        <button id="copy-prompt-btn" class="outline">Copy import prompt</button>
-      </div>
-
-      <h4>Reset</h4>
-      <button id="reset-btn" class="outline secondary">Reset all data</button>
-      ${raw("")}
-    </article>
+      <!-- Data -->
+      <section class="settings-group">
+        <div class="grp-h"><span>Data</span></div>
+        <div class="row">
+          <span class="lbl">Export everything (JSON)</span>
+          <button class="btn sm" id="export-btn">↓ Export</button>
+        </div>
+        <div class="row">
+          <span class="lbl">Import library JSON</span>
+          <button class="btn sm ghost" id="import-btn">Import…</button>
+          <input id="import-file" type="file" accept="application/json,.json" hidden />
+        </div>
+        <div class="row">
+          <span class="lbl">Copy import prompt</span>
+          <button class="btn sm ghost" id="copy-prompt-btn">Copy</button>
+        </div>
+        <div class="row danger">
+          <span class="lbl">Clear all data</span>
+          <button class="btn sm danger" id="reset-btn">Reset</button>
+        </div>
+      </section>
+    </div>
   `;
 
   wire(dialog, onChange);
 }
 
-function renderAccountSection(email: string, displayName: string): string {
-  return `
-    <h4>Account</h4>
-    <p class="muted"><small>Signed in as <strong>${esc(email)}</strong></small></p>
-    <label>Display name
-      <input id="set-display-name" placeholder="(shown on items you share)" value="${esc(displayName)}" />
-    </label>
-    <button id="sign-out-btn" class="outline secondary">Sign out</button>
-  `;
+function renderAccountGroup(email: string, displayName: string): string {
+  return `<section class="settings-group">
+    <div class="grp-h"><span>Account</span></div>
+    <div class="row">
+      <span class="lbl">Signed in as</span>
+      <span class="val">${esc(email)}</span>
+    </div>
+    <div class="row">
+      <span class="lbl">Display name</span>
+      <input class="inline-input" id="set-display-name" value="${esc(displayName)}" placeholder="(shown on shared items)" />
+    </div>
+    <div class="row">
+      <span class="lbl">Session</span>
+      <button class="btn sm ghost" id="sign-out-btn">Sign out</button>
+    </div>
+  </section>`;
 }
 
-function renderSlots(slots: MealSlot[]): string {
-  if (slots.length === 0) {
-    return `<p class="muted"><small>No slots yet — add one below.</small></p>`;
-  }
-  return `<ul class="slot-list">${slots
-    .map(
-      (s, i) => `<li class="slot-row" data-slot-id="${esc(s.id)}">
-        <input class="slot-label" data-idx="${i}" value="${esc(s.label)}" />
-        <button class="outline" data-up="${i}" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
-        <button class="outline" data-down="${i}" ${i === slots.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
-        <button class="outline secondary" data-rm="${i}" aria-label="Remove slot">×</button>
-      </li>`,
-    )
-    .join("")}</ul>`;
+function macroTile(key: string, label: string, value: number, unit: string): string {
+  const editing = state.editingTarget === (key as keyof ReturnType<typeof getStore>["targets"]);
+  return `<button class="macro-target" data-edit-target="${esc(key)}">
+    <div class="k">${esc(label)}</div>
+    ${
+      editing
+        ? `<input class="v-input" type="number" min="0" step="any" data-target-input="${esc(key)}" value="${value}" autofocus />`
+        : `<div class="v">${value.toLocaleString()}${esc(unit)}</div>`
+    }
+  </button>`;
+}
+
+function renderSlotsBlock(slots: MealSlot[]): string {
+  return `
+    <div class="row" style="border-bottom: 1px solid var(--rule);">
+      <span class="lbl">Slots</span>
+      <span class="val">${slots.length} per day</span>
+    </div>
+    <ul class="slot-edit-list">
+      ${slots
+        .map(
+          (s, i) => `<li class="slot-edit-row" data-slot-id="${esc(s.id)}">
+            <input data-slot-label="${esc(s.id)}" value="${esc(s.label)}" />
+            <button data-up="${i}" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
+            <button data-down="${i}" ${i === slots.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
+            <button class="danger" data-rm="${esc(s.id)}" aria-label="Remove">✕</button>
+          </li>`,
+        )
+        .join("")}
+    </ul>
+    <div class="slot-edit-row" style="border-bottom: 0;">
+      <input id="new-slot-label" placeholder="＋ Add a slot (Breakfast, Snack, …)" />
+      <button id="add-slot">Add</button>
+    </div>
+  `;
 }
 
 function wire(dialog: HTMLDialogElement, onChange: () => void): void {
   const store = getStore();
-
   const rerender = () => {
     render(dialog, onChange);
     onChange();
@@ -126,42 +167,68 @@ function wire(dialog: HTMLDialogElement, onChange: () => void): void {
 
   dialog.querySelector("#settings-close")?.addEventListener("click", () => dialog.close());
 
-  (dialog.querySelector("#set-kcal") as HTMLInputElement).addEventListener("change", (e) => {
-    store.targets.kcal = Math.max(0, Number((e.target as HTMLInputElement).value) || 0);
-    onChange();
-  });
-  (dialog.querySelector("#set-protein") as HTMLInputElement).addEventListener("change", (e) => {
-    store.targets.protein = Math.max(0, Number((e.target as HTMLInputElement).value) || 0);
-    onChange();
-  });
-
-  // Display name
+  // Account
   dialog.querySelector("#set-display-name")?.addEventListener("change", (e) => {
     store.profile.displayName = (e.target as HTMLInputElement).value.trim();
   });
-
-  // Sign out
   dialog.querySelector("#sign-out-btn")?.addEventListener("click", async () => {
-    if (!confirmAction("Sign out? Your local data will stay on this device but won't sync until you sign in again.")) return;
+    if (
+      !confirmAction(
+        "Sign out? Your local data will stay on this device but won't sync until you sign in again.",
+      )
+    )
+      return;
     await authSignOut();
     dialog.close();
   });
 
-  // Slot label change
-  dialog.querySelectorAll<HTMLInputElement>("input.slot-label").forEach((el) => {
-    el.addEventListener("change", () => {
-      const idx = Number(el.dataset.idx);
-      const label = el.value.trim();
-      if (!label) {
-        el.value = store.slots[idx].label;
-        return;
-      }
-      store.slots[idx].label = label;
+  // Macro target tiles — tap to edit inline.
+  dialog.querySelectorAll<HTMLElement>("[data-edit-target]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      const key = el.dataset.editTarget as keyof typeof store.targets;
+      state.editingTarget = key;
       rerender();
     });
   });
+  dialog.querySelectorAll<HTMLInputElement>("[data-target-input]").forEach((input) => {
+    const commit = () => {
+      const key = input.dataset.targetInput as keyof typeof store.targets;
+      const v = Math.max(0, Number(input.value) || 0);
+      store.targets[key] = v;
+      state.editingTarget = null;
+      rerender();
+    };
+    input.addEventListener("blur", commit);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commit();
+      } else if (e.key === "Escape") {
+        state.editingTarget = null;
+        rerender();
+      }
+    });
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.focus();
+    input.select();
+  });
 
-  // Reorder slots
+  // Slots
+  dialog.querySelectorAll<HTMLInputElement>("[data-slot-label]").forEach((el) => {
+    el.addEventListener("change", () => {
+      const id = el.dataset.slotLabel!;
+      const slot = store.slots.find((s) => s.id === id);
+      if (!slot) return;
+      const label = el.value.trim();
+      if (!label) {
+        el.value = slot.label;
+        return;
+      }
+      slot.label = label;
+      rerender();
+    });
+  });
   dialog.querySelectorAll<HTMLElement>("[data-up]").forEach((el) => {
     el.addEventListener("click", () => {
       const i = Number(el.dataset.up);
@@ -182,23 +249,24 @@ function wire(dialog: HTMLDialogElement, onChange: () => void): void {
       rerender();
     });
   });
-
-  // Remove slot — also strip its key from every day in the week plan.
   dialog.querySelectorAll<HTMLElement>("[data-rm]").forEach((el) => {
     el.addEventListener("click", () => {
-      const i = Number(el.dataset.rm);
-      const slot = store.slots[i];
+      const id = el.dataset.rm!;
+      const slot = store.slots.find((s) => s.id === id);
       if (!slot) return;
-      if (!confirmAction(`Remove "${slot.label}" slot? Meals assigned to it across the week will be unassigned.`)) return;
-      store.slots = store.slots.filter((_, idx) => idx !== i);
+      if (
+        !confirmAction(
+          `Remove "${slot.label}" slot? Meals assigned to it across the week will be unassigned.`,
+        )
+      )
+        return;
+      store.slots = store.slots.filter((s) => s.id !== id);
       for (const day of Object.keys(store.week) as (keyof typeof store.week)[]) {
-        delete store.week[day][slot.id];
+        delete store.week[day][id];
       }
       rerender();
     });
   });
-
-  // Add slot
   dialog.querySelector("#add-slot")?.addEventListener("click", () => {
     const input = dialog.querySelector("#new-slot-label") as HTMLInputElement;
     const label = input.value.trim();
@@ -221,6 +289,17 @@ function wire(dialog: HTMLDialogElement, onChange: () => void): void {
     }
   });
 
+  // Theme
+  dialog.querySelectorAll<HTMLButtonElement>("[data-theme-set]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const next = btn.dataset.themeSet as ThemePref;
+      store.theme = next;
+      applyTheme(next);
+      rerender();
+    });
+  });
+
+  // Data — export / import / reset
   dialog.querySelector("#export-btn")?.addEventListener("click", () => {
     const json = JSON.stringify(snapshot(store), null, 2);
     const blob = new Blob([json], { type: "application/json" });
@@ -271,12 +350,12 @@ function wire(dialog: HTMLDialogElement, onChange: () => void): void {
   });
 
   dialog.querySelector("#reset-btn")?.addEventListener("click", () => {
-    if (!confirmAction("Delete all ingredients, meals, and the week plan? This can't be undone.")) return;
+    if (!confirmAction("Delete all ingredients, meals, and the week plan? This can't be undone."))
+      return;
     clearStorage();
     replaceState(defaultState());
+    applyTheme(defaultState().theme);
     onChange();
     dialog.close();
   });
 }
-
-export { esc };

@@ -77,11 +77,15 @@ export type WeekPlan = {
 export interface Targets {
   kcal: number;
   protein: number;
+  carbs: number;
+  fat: number;
 }
 
 export interface UserProfile {
   displayName: string;
 }
+
+export type ThemePref = "light" | "dark" | "auto";
 
 export interface AppState {
   ingredients: Ingredient[];
@@ -91,6 +95,7 @@ export interface AppState {
   targets: Targets;
   shoppingChecked: string[];
   profile: UserProfile;
+  theme: ThemePref;
 }
 
 export interface Nutrition {

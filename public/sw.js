@@ -1,5 +1,5 @@
 // Versioned cache — bump CACHE_VERSION on every release so old assets evict.
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const CACHE_NAME = `mealprep-${CACHE_VERSION}`;
 
 // We don't know the hashed asset filenames at SW build time, so we cache on

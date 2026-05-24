@@ -1,9 +1,11 @@
-import type { AppState, Ingredient, Meal, MealSlot, WeekPlan } from "./types";
+import type { AppState, Ingredient, Meal, MealSlot, ThemePref, WeekPlan } from "./types";
 import { DAYS, DEFAULT_SLOTS } from "./types";
 
-// Bumped from v1 to v2 when slots / profile were added — see normalise().
-const STORAGE_KEY = "mealprep:v2";
-const LEGACY_STORAGE_KEY = "mealprep:v1";
+// v3 widened `targets` from {kcal, protein} to all four macros and added the
+// `theme` preference. The normalise() function below back-fills both for any
+// older save it reads — kept indefinitely, no hard cut-over.
+const STORAGE_KEY = "mealprep:v3";
+const LEGACY_STORAGE_KEYS = ["mealprep:v2", "mealprep:v1"];
 const SAVE_DEBOUNCE_MS = 300;
 
 // localStorage key the app should currently read/write. Defaults to the
@@ -22,8 +24,13 @@ export function loadFromScope(uid: string | null): AppState {
   try {
     let raw = localStorage.getItem(key);
     if (!raw && !uid) {
-      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (legacy) raw = legacy;
+      for (const legacyKey of LEGACY_STORAGE_KEYS) {
+        const legacy = localStorage.getItem(legacyKey);
+        if (legacy) {
+          raw = legacy;
+          break;
+        }
+      }
     }
     if (!raw) return defaultState();
     return normalise(JSON.parse(raw));
@@ -37,7 +44,7 @@ export function loadFromScope(uid: string | null): AppState {
 export function clearSignedOutScope(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    for (const legacyKey of LEGACY_STORAGE_KEYS) localStorage.removeItem(legacyKey);
   } catch {
     /* ignore */
   }
@@ -60,24 +67,28 @@ export function defaultState(): AppState {
     meals: [],
     slots,
     week: emptyWeek(slots),
-    targets: { kcal: 2050, protein: 140 },
+    targets: { kcal: 2050, protein: 140, carbs: 220, fat: 70 },
     shoppingChecked: [],
     profile: { displayName: "" },
+    theme: "auto",
   };
 }
 
 export function load(): AppState {
   try {
     let raw = localStorage.getItem(activeKey);
-    // One-shot migration from the v1 single-blob key.
+    // One-shot migration from any older v1/v2 single-blob key.
     if (!raw && activeKey === STORAGE_KEY) {
-      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (legacy) {
-        raw = legacy;
-        try {
-          localStorage.removeItem(LEGACY_STORAGE_KEY);
-        } catch {
-          /* ignore */
+      for (const legacyKey of LEGACY_STORAGE_KEYS) {
+        const legacy = localStorage.getItem(legacyKey);
+        if (legacy) {
+          raw = legacy;
+          try {
+            localStorage.removeItem(legacyKey);
+          } catch {
+            /* ignore */
+          }
+          break;
         }
       }
     }
@@ -97,6 +108,10 @@ export function normalise(input: unknown): AppState {
   const slots = Array.isArray(obj.slots) && obj.slots.length > 0
     ? obj.slots.map((s) => ({ id: String(s.id), label: String(s.label) }))
     : base.slots;
+  const theme: ThemePref =
+    obj.theme === "light" || obj.theme === "dark" || obj.theme === "auto"
+      ? obj.theme
+      : base.theme;
   return {
     ingredients: Array.isArray(obj.ingredients) ? obj.ingredients : base.ingredients,
     meals: Array.isArray(obj.meals) ? obj.meals.map(stripLegacyMealFields) : base.meals,
@@ -113,6 +128,7 @@ export function normalise(input: unknown): AppState {
       obj.profile && typeof obj.profile === "object"
         ? { displayName: String((obj.profile as UserProfileLike).displayName ?? "") }
         : base.profile,
+    theme,
   };
 }
 
