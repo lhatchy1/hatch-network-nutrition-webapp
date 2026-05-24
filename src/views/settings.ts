@@ -1,11 +1,36 @@
 import { getStore, replaceState, snapshot } from "../store";
-import { clearStorage, defaultState, exportFilename, validateImport } from "../state";
+import { clearStorage, defaultState, exportFilename, validateImport, uid as newId } from "../state";
 import { esc, html, raw, confirmAction } from "../ui/components";
+import type { MealSlot } from "../types";
+import { currentUser, signOut as authSignOut } from "../firebase/auth";
 // Bundled at build time so the in-app prompt and the repo doc never drift.
 import importPrompt from "../../IMPORT.md?raw";
 
 export function openSettings(dialog: HTMLDialogElement, onChange: () => void): void {
+  render(dialog, onChange);
+  if (!dialog.open) dialog.showModal();
+
+  // Close on backdrop click. Re-bound each open to match the current article.
+  dialog.addEventListener(
+    "click",
+    (e) => {
+      const article = dialog.querySelector("article");
+      if (!article) return;
+      const rect = (article as HTMLElement).getBoundingClientRect();
+      const inside =
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
+      if (!inside) dialog.close();
+    },
+    { once: true },
+  );
+}
+
+function render(dialog: HTMLDialogElement, onChange: () => void): void {
   const store = getStore();
+  const user = currentUser();
 
   dialog.innerHTML = html`
     <article>
@@ -13,6 +38,9 @@ export function openSettings(dialog: HTMLDialogElement, onChange: () => void): v
         <button aria-label="Close" rel="prev" id="settings-close"></button>
         <h3>Settings</h3>
       </header>
+
+      ${raw(user ? renderAccountSection(user.email ?? "", store.profile.displayName) : "")}
+
       <h4>Daily targets</h4>
       <div class="row">
         <label class="grow">kcal
@@ -23,13 +51,21 @@ export function openSettings(dialog: HTMLDialogElement, onChange: () => void): v
         </label>
       </div>
 
+      <h4>Meal slots</h4>
+      <p class="muted"><small>The rows on your week grid. Add as many as you want (Breakfast, Snack, Pre-workout, etc.). Deleting a slot also clears any meals assigned to it.</small></p>
+      ${raw(renderSlots(store.slots))}
+      <div class="row">
+        <input id="new-slot-label" placeholder="e.g. Breakfast" class="grow" />
+        <button id="add-slot" class="outline">+ Add slot</button>
+      </div>
+
       <h4>Backup & restore</h4>
       <div class="row">
         <button id="export-btn">Export JSON</button>
         <button id="import-btn" class="outline">Import JSON…</button>
         <input id="import-file" type="file" accept="application/json,.json" hidden />
       </div>
-      <p class="muted"><small>Drop the exported file in iCloud/Drive to sync between devices.</small></p>
+      <p class="muted"><small>${user ? "Your data also syncs automatically to your account." : "Sign in to enable cross-device sync. Until then, drop the exported file in iCloud/Drive to sync manually."}</small></p>
 
       <h4>Generate JSON with a chat</h4>
       <p class="muted"><small>Copies a self-contained schema + example brief. Paste into any chat, describe your week, and import the JSON it produces.</small></p>
@@ -41,7 +77,43 @@ export function openSettings(dialog: HTMLDialogElement, onChange: () => void): v
     </article>
   `;
 
-  if (!dialog.open) dialog.showModal();
+  wire(dialog, onChange);
+}
+
+function renderAccountSection(email: string, displayName: string): string {
+  return `
+    <h4>Account</h4>
+    <p class="muted"><small>Signed in as <strong>${esc(email)}</strong></small></p>
+    <label>Display name
+      <input id="set-display-name" placeholder="(shown on items you share)" value="${esc(displayName)}" />
+    </label>
+    <button id="sign-out-btn" class="outline secondary">Sign out</button>
+  `;
+}
+
+function renderSlots(slots: MealSlot[]): string {
+  if (slots.length === 0) {
+    return `<p class="muted"><small>No slots yet — add one below.</small></p>`;
+  }
+  return `<ul class="slot-list">${slots
+    .map(
+      (s, i) => `<li class="slot-row" data-slot-id="${esc(s.id)}">
+        <input class="slot-label" data-idx="${i}" value="${esc(s.label)}" />
+        <button class="outline" data-up="${i}" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
+        <button class="outline" data-down="${i}" ${i === slots.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
+        <button class="outline secondary" data-rm="${i}" aria-label="Remove slot">×</button>
+      </li>`,
+    )
+    .join("")}</ul>`;
+}
+
+function wire(dialog: HTMLDialogElement, onChange: () => void): void {
+  const store = getStore();
+
+  const rerender = () => {
+    render(dialog, onChange);
+    onChange();
+  };
 
   dialog.querySelector("#settings-close")?.addEventListener("click", () => dialog.close());
 
@@ -52,6 +124,92 @@ export function openSettings(dialog: HTMLDialogElement, onChange: () => void): v
   (dialog.querySelector("#set-protein") as HTMLInputElement).addEventListener("change", (e) => {
     store.targets.protein = Math.max(0, Number((e.target as HTMLInputElement).value) || 0);
     onChange();
+  });
+
+  // Display name
+  dialog.querySelector("#set-display-name")?.addEventListener("change", (e) => {
+    store.profile.displayName = (e.target as HTMLInputElement).value.trim();
+  });
+
+  // Sign out
+  dialog.querySelector("#sign-out-btn")?.addEventListener("click", async () => {
+    if (!confirmAction("Sign out? Your local data will stay on this device but won't sync until you sign in again.")) return;
+    await authSignOut();
+    dialog.close();
+  });
+
+  // Slot label change
+  dialog.querySelectorAll<HTMLInputElement>("input.slot-label").forEach((el) => {
+    el.addEventListener("change", () => {
+      const idx = Number(el.dataset.idx);
+      const label = el.value.trim();
+      if (!label) {
+        el.value = store.slots[idx].label;
+        return;
+      }
+      store.slots[idx].label = label;
+      rerender();
+    });
+  });
+
+  // Reorder slots
+  dialog.querySelectorAll<HTMLElement>("[data-up]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const i = Number(el.dataset.up);
+      if (i <= 0) return;
+      const arr = [...store.slots];
+      [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]];
+      store.slots = arr;
+      rerender();
+    });
+  });
+  dialog.querySelectorAll<HTMLElement>("[data-down]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const i = Number(el.dataset.down);
+      const arr = [...store.slots];
+      if (i >= arr.length - 1) return;
+      [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
+      store.slots = arr;
+      rerender();
+    });
+  });
+
+  // Remove slot — also strip its key from every day in the week plan.
+  dialog.querySelectorAll<HTMLElement>("[data-rm]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const i = Number(el.dataset.rm);
+      const slot = store.slots[i];
+      if (!slot) return;
+      if (!confirmAction(`Remove "${slot.label}" slot? Meals assigned to it across the week will be unassigned.`)) return;
+      store.slots = store.slots.filter((_, idx) => idx !== i);
+      for (const day of Object.keys(store.week) as (keyof typeof store.week)[]) {
+        delete store.week[day][slot.id];
+      }
+      rerender();
+    });
+  });
+
+  // Add slot
+  dialog.querySelector("#add-slot")?.addEventListener("click", () => {
+    const input = dialog.querySelector("#new-slot-label") as HTMLInputElement;
+    const label = input.value.trim();
+    if (!label) {
+      input.focus();
+      return;
+    }
+    const id = newId();
+    store.slots = [...store.slots, { id, label }];
+    for (const day of Object.keys(store.week) as (keyof typeof store.week)[]) {
+      store.week[day][id] = null;
+    }
+    input.value = "";
+    rerender();
+  });
+  dialog.querySelector("#new-slot-label")?.addEventListener("keydown", (e) => {
+    if ((e as KeyboardEvent).key === "Enter") {
+      e.preventDefault();
+      (dialog.querySelector("#add-slot") as HTMLButtonElement).click();
+    }
   });
 
   dialog.querySelector("#export-btn")?.addEventListener("click", () => {
@@ -107,21 +265,6 @@ export function openSettings(dialog: HTMLDialogElement, onChange: () => void): v
     onChange();
     dialog.close();
   });
-
-  // ESC handler is built into <dialog>; close on backdrop click.
-  dialog.addEventListener(
-    "click",
-    (e) => {
-      const rect = (dialog.querySelector("article") as HTMLElement).getBoundingClientRect();
-      const inside =
-        e.clientX >= rect.left &&
-        e.clientX <= rect.right &&
-        e.clientY >= rect.top &&
-        e.clientY <= rect.bottom;
-      if (!inside) dialog.close();
-    },
-    { once: true },
-  );
 }
 
 export { esc };

@@ -4,6 +4,7 @@ import { INGREDIENT_CATEGORIES } from "../types";
 import type { Ingredient, IngredientCategory, Unit } from "../types";
 import { esc, html, raw, confirmAction } from "../ui/components";
 import { mountFoodSearchPanel } from "../ui/foodSearchPanel";
+import { shareIngredient, isSignedIn } from "../firebase/sharing";
 
 type SortKey = keyof Pick<
   Ingredient,
@@ -153,6 +154,7 @@ function renderRow(r: Ingredient): string {
       <td>${esc(r.category)}</td>
       <td class="actions">
         <button class="outline" data-edit="${esc(r.id)}">Edit</button>
+        ${isSignedIn() ? `<button class="outline" data-share="${esc(r.id)}">Share</button>` : ""}
         <button class="outline secondary" data-del="${esc(r.id)}">Delete</button>
       </td>
     </tr>
@@ -225,6 +227,21 @@ function wire(root: HTMLElement): void {
     el.addEventListener("click", () => {
       view.editingId = el.dataset.edit!;
       renderIngredients(root);
+    });
+  });
+
+  root.querySelectorAll<HTMLElement>("[data-share]").forEach((el) => {
+    el.addEventListener("click", async () => {
+      const id = el.dataset.share!;
+      const ing = store.ingredients.find((i) => i.id === id);
+      if (!ing) return;
+      if (!confirmAction(`Share "${ing.name}" to the public area?`)) return;
+      try {
+        await shareIngredient(store, ing);
+        alert("Shared. Browse it under the Share tab.");
+      } catch (err) {
+        alert("Couldn't share: " + (err instanceof Error ? err.message : String(err)));
+      }
     });
   });
 

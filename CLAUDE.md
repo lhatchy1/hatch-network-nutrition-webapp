@@ -6,9 +6,15 @@ codebase cold. Pair with [`spec.md`](./spec.md) (the product spec) and
 
 ## What this is
 
-A single-user **Meal Prep Planner** PWA: ingredient library → meals →
-weekly plan (bridge / lunch / dinner per day) → auto shopping list. Fully
-client-side, state in `localStorage`, deploys to GitHub Pages.
+A multi-user **Meal Prep Planner** PWA: ingredient library → meals →
+weekly plan (user-configurable slots per day) → auto shopping list →
+public sharing area. State lives in `localStorage` (offline cache) and
+syncs to Firestore per user. Deploys to GitHub Pages.
+
+Accounts are **invite-only** — there's no sign-up UI; the admin creates
+users from the Firebase console. The Firebase console's "Enable create
+(sign-up)" toggle must be **off** to fully lock client-side account
+creation.
 
 ## Stack & key decisions
 
@@ -17,9 +23,10 @@ client-side, state in `localStorage`, deploys to GitHub Pages.
 | Build | Vite + TypeScript (vanilla template) | Fast dev, sensible defaults |
 | Reactivity | Alpine.js | Tiny; we use only the global store + `Alpine.effect` |
 | CSS | Pico.css | Classless, dark mode via `prefers-color-scheme` |
-| Persistence | `localStorage` key `mealprep:v1` | Single-blob, debounced 300 ms |
+| Persistence | `localStorage` key `mealprep:v2[:uid]` | Single-blob, debounced 300 ms; namespaced per user once signed in |
+| Auth + sync | Firebase Auth (Email/Password) + Firestore | Cross-device sync; admin-provisioned accounts; offline-first via localStorage cache |
 | PWA | `public/manifest.webmanifest` + `public/sw.js` (stale-while-revalidate, versioned cache) | Offline-capable, installable |
-| Routing | Hash router (`#/ingredients`, `#/meals`, `#/week`, `#/shopping`) | GitHub Pages has no SPA fallback; hashes never hit the server |
+| Routing | Hash router (`#/ingredients`, `#/meals`, `#/week`, `#/shopping`, `#/share`) | GitHub Pages has no SPA fallback; hashes never hit the server |
 | Hosting | GitHub Pages via Actions (`actions/deploy-pages@v4`) | No backend; main → live |
 | Bundle target | None (was 50 KB, dropped during planning) | Optimise for clarity |
 
@@ -108,15 +115,41 @@ into our six ingredient categories via `guessCategory`.
 | Task | Touch points |
 | --- | --- |
 | New view | Add `src/views/<name>.ts`, register in `ROUTES` in `main.ts`, add a link to the nav (auto-generated from `ROUTES`) |
-| New week slot | `src/types.ts` (`SlotKey`, `SLOTS`) |
+| Tweak default meal slots | `src/types.ts` (`DEFAULT_SLOTS`). Live slots are stored in `state.slots` and editable per-user from Settings. |
 | New ingredient category | `src/types.ts` (`INGREDIENT_CATEGORIES`) — listed categories drive the shopping-list grouping order. Also update `guessCategory` in `src/api/foodSearch.ts` so Open Food Facts hits map into it. |
-| Storage shape change | Bump key in `src/state.ts` (`STORAGE_KEY`) **and** bump `CACHE_VERSION` in `public/sw.js`. Update `validateImport` and `normalise` |
+| Storage shape change | Bump key in `src/state.ts` (`STORAGE_KEY`) **and** bump `CACHE_VERSION` in `public/sw.js`. Update `validateImport` and `normalise`. Add the field to the `void s.foo` list in `main.ts` and to `snapshot()` / `replaceState()` / `reseedStore()` in `store.ts`. |
+| New shareable kind | Add to `ShareKind` in `src/firebase/sharing.ts`, define a `Shared*` interface, add a tab in `src/views/share.ts`, and update `firestore.rules`. |
 | Change custom domain | DNS `CNAME` at the registrar, `public/CNAME`, Settings → Pages → Custom domain, and `base` in `vite.config.ts` (`/` for a subdomain root, `/<subpath>/` if you ever subpath-serve again) |
+
+## Auth + sync (Firebase)
+
+- Config in `src/firebase/config.ts` — pulls `VITE_FIREBASE_*` env vars.
+  When any of them are missing, `isFirebaseConfigured()` returns false
+  and the app silently runs in offline-only mode (no auth gate, no
+  Share tab). This keeps local dev usable without a `.env`.
+- Auth observer lives in `src/firebase/auth.ts`. `initAuth()` registers
+  `onAuthStateChanged`; consumers subscribe via `onAuthChange()`.
+- Sync loop in `src/firebase/sync.ts`:
+  1. On sign-in, switch the localStorage scope to `mealprep:v2:{uid}`.
+  2. Read `/users/{uid}/state/main` from Firestore.
+  3. If both local and remote have data and they differ, prompt the
+     user (push-local vs use-cloud).
+  4. Subscribe via `onSnapshot` so other devices receive live updates.
+  5. Mirror local saves up to Firestore (debounced by `state.save()`'s
+     timer, then re-debounced via the `lastPushed` JSON cache to avoid
+     re-pushing values we just received).
+- Sharing in `src/firebase/sharing.ts`: top-level `shared_ingredients`,
+  `shared_meals`, `shared_plans` collections. Each doc is self-contained
+  (a shared meal carries its ingredients; a shared plan carries its
+  meals + ingredients) so importers don't need them pre-installed.
+- Security rules at `firestore.rules` — copy/paste into Firebase
+  Console → Firestore Database → Rules.
 
 ## Build / dev / deploy
 
 ```sh
 npm install
+cp .env.example .env  # then fill in your Firebase config (optional)
 npm run dev        # http://localhost:5173/
 npm run build      # tsc --noEmit && vite build
 npm run preview    # serve dist/
@@ -126,7 +159,10 @@ npm run icons      # regenerate PWA icon PNGs
 
 CI: `.github/workflows/deploy.yml` builds on push to `main` and deploys
 to Pages. The deploy job needs **Repo Settings → Pages → Source: GitHub
-Actions** set once before the first deploy can publish.
+Actions** set once before the first deploy can publish, plus the
+`VITE_FIREBASE_*` secrets configured at **Repo Settings → Secrets and
+variables → Actions** for the production build to bake them into the
+bundle.
 
 ## Gotchas
 
@@ -195,6 +231,9 @@ Actions** set once before the first deploy can publish.
 | Anything render-related | `src/views/<name>.ts` + `src/ui/` |
 | Anything maths-related | `src/nutrition.ts`, `src/shopping.ts` |
 | State / persistence | `src/state.ts`, `src/store.ts` |
+| Auth + cloud sync | `src/firebase/{config,auth,sync,sharing}.ts`, `firestore.rules` |
+| Sign-in form | `src/ui/authGate.ts` |
+| Sharing UI | `src/views/share.ts` |
 | Routing / startup | `src/main.ts` |
 | Open Food Facts integration | `src/api/foodSearch.ts` (search + barcode lookup) |
 | Food-search UI (shared) | `src/ui/foodSearchPanel.ts` |

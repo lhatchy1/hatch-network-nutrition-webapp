@@ -1,0 +1,49 @@
+// Copy these into Firebase Console → Firestore Database → Rules and Publish.
+// Mirrored in the repo so the source of truth is reviewable.
+//
+// Model:
+//   - Per-user private state lives under /users/{uid}/...; only that user
+//     can read or write.
+//   - Shared items live in /shared_ingredients, /shared_meals, /shared_plans
+//     at top level. Anyone can read (public sharing area is open by design).
+//     Only signed-in users can create, only if authorUid matches their own.
+//     Authors can delete their own items. Nobody updates after creation —
+//     re-share to publish a new version.
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{uid}/{path=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /shared_ingredients/{id} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.authorUid == request.auth.uid;
+      allow update: if false;
+      allow delete: if request.auth != null
+        && resource.data.authorUid == request.auth.uid;
+    }
+
+    match /shared_meals/{id} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.authorUid == request.auth.uid;
+      allow update: if false;
+      allow delete: if request.auth != null
+        && resource.data.authorUid == request.auth.uid;
+    }
+
+    match /shared_plans/{id} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.authorUid == request.auth.uid;
+      allow update: if false;
+      allow delete: if request.auth != null
+        && resource.data.authorUid == request.auth.uid;
+    }
+  }
+}
