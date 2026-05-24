@@ -216,6 +216,8 @@ dialog:not([open]) { display: none !important; }
   color: var(--ink-2);
   display: grid; place-items: center;
   font-size: 13px;
+  line-height: 1;
+  padding: 0;
   border: 0; cursor: pointer;
 }
 
@@ -284,7 +286,8 @@ main { padding-bottom: var(--mtabs-h); }
 .nav .gear {
   width: 34px; height: 34px; border-radius: 50%;
   background: var(--bg-soft); color: var(--ink-2);
-  display: grid; place-items: center; cursor: pointer; border: 0;
+  display: grid; place-items: center; cursor: pointer;
+  border: 0; padding: 0; line-height: 1; font-size: 14px;
 }
 
 @media (min-width: 920px) {
@@ -372,9 +375,30 @@ main { padding-bottom: var(--mtabs-h); }
 .page-h h2 {
   font-size: 24px; font-weight: 600; margin: 2px 0 0; color: var(--ink);
 }
+/* Mobile/desktop title swap — both render; CSS reveals the right one. */
+.page-h-title-desktop { display: none; }
 @media (min-width: 920px) {
   .page-h { padding: 14px 30px 18px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
   .page-h h1 { font-size: 34px; }
+  .page-h-title-mobile { display: none; }
+  .page-h-title-desktop { display: block; }
+}
+/* Inline weekly stats next to the desktop title */
+.week-stats {
+  display: flex; flex-wrap: wrap; gap: 14px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.week-stats > span { display: inline-flex; gap: 4px; align-items: baseline; }
+.week-stats b {
+  color: var(--ink); font-weight: 600;
+  font-size: 13px;
+}
+.week-stats em {
+  font-style: normal; letter-spacing: 0.08em; text-transform: uppercase;
+  font-size: 10px;
 }
 
 /* =====================================================================
@@ -395,7 +419,10 @@ main { padding-bottom: var(--mtabs-h); }
 .daystrip .d .num { display: block; font-weight: 600; font-size: 15px; margin-top: 1px; font-family: var(--font-mono); }
 .daystrip .d.cur     { background: var(--ink); color: var(--bg); }
 [data-theme="dark"] .daystrip .d.cur { color: #0f1d18; }
-.daystrip .d.cur .lt { color: rgba(255,255,255,0.65); }
+/* Use currentColor + opacity so the letter stays legible in both
+   themes — a hard-coded white letter washes out against the cream
+   --ink in dark mode. */
+.daystrip .d.cur .lt { color: inherit; opacity: 0.65; }
 .daystrip .d .status {
   display: block; width: 4px; height: 4px;
   margin: 3px auto 0; border-radius: 50%;
@@ -467,6 +494,8 @@ main { padding-bottom: var(--mtabs-h); }
   color: var(--ink-2);
   display: grid; place-items: center;
   font-size: 14px;
+  line-height: 1;
+  padding: 0;
   flex: 0 0 22px;
   border: 0; cursor: pointer;
 }
@@ -476,7 +505,10 @@ main { padding-bottom: var(--mtabs-h); }
 }
 [data-theme="dark"] .slot.empty .plus { color: #0f1d18; }
 
+/* Mobile-only daystrip + today card; the week-grid takes over ≥920px. */
+.week-grid { display: none; }
 @media (min-width: 920px) {
+  .daystrip, .today-card { display: none; }
   .week-grid {
     padding: 0 20px 14px;
     display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;
@@ -910,6 +942,8 @@ dialog.settings .hdr .close {
   display: grid; place-items: center;
   border: 0; cursor: pointer;
   font-size: 14px;
+  line-height: 1;
+  padding: 0;
 }
 dialog.settings .body { padding: 6px 22px 22px; overflow-y: auto; }
 
@@ -1212,5 +1246,15 @@ select, textarea {
   background: var(--bg-card);
   color: var(--ink);
   border: 1px solid var(--rule-strong);
+  border-radius: var(--r-md);
+}
+
+/* Pico classless ships [type=search] with a magnifying-glass background
+   image plus a padding-inline-start to reserve space for it. Our design
+   doesn't include search icons — strip both so app-level padding rules
+   (e.g. .search-card input) don't sit on top of the icon. */
+input[type="search"] {
+  background-image: none;
+  padding-inline-start: var(--pico-form-element-spacing-horizontal, 12px);
   border-radius: var(--r-md);
 }
