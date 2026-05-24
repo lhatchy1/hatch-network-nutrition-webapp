@@ -40,7 +40,13 @@ interface OFFResponse {
   products?: OFFProduct[];
 }
 
-const ENDPOINT = "https://world.openfoodfacts.org/cgi/search.pl";
+interface OFFProductResponse {
+  status: number;
+  product?: OFFProduct;
+}
+
+const SEARCH_ENDPOINT = "https://world.openfoodfacts.org/cgi/search.pl";
+const PRODUCT_ENDPOINT = "https://world.openfoodfacts.org/api/v2/product";
 const FIELDS =
   "product_name,product_name_en,generic_name,generic_name_en,brands,categories_tags,nutriments";
 
@@ -51,7 +57,7 @@ export async function searchFoods(
   const q = query.trim();
   if (q.length < 2) return [];
 
-  const url = new URL(ENDPOINT);
+  const url = new URL(SEARCH_ENDPOINT);
   url.searchParams.set("search_terms", q);
   url.searchParams.set("search_simple", "1");
   url.searchParams.set("action", "process");
@@ -67,30 +73,55 @@ export async function searchFoods(
 
   const hits: FoodHit[] = [];
   for (const p of data.products ?? []) {
-    const n = p.nutriments;
-    if (!n) continue;
-    const kcal = n["energy-kcal_100g"];
-    // Skip entries with no usable kcal — they're unhelpful for a nutrition app.
-    if (typeof kcal !== "number" || kcal <= 0) continue;
-    const name = (
-      p.product_name_en ||
-      p.product_name ||
-      p.generic_name_en ||
-      p.generic_name ||
-      ""
-    ).trim();
-    if (!name) continue;
-    hits.push({
-      name,
-      brand: p.brands?.split(",")[0]?.trim() || undefined,
-      kcalPer100: round(kcal),
-      proteinPer100: round(n.proteins_100g ?? 0),
-      carbsPer100: round(n.carbohydrates_100g ?? 0),
-      fatPer100: round(n.fat_100g ?? 0),
-      category: guessCategory(p.categories_tags ?? []),
-    });
+    const hit = productToHit(p);
+    if (hit) hits.push(hit);
   }
   return hits;
+}
+
+// Look up a single product by barcode (EAN-13, UPC-A, EAN-8, UPC-E).
+// Returns null when OFF doesn't know the barcode or the entry lacks
+// usable nutriments.
+export async function lookupBarcode(
+  barcode: string,
+  signal?: AbortSignal,
+): Promise<FoodHit | null> {
+  const code = barcode.trim();
+  if (!code) return null;
+  const url = `${PRODUCT_ENDPOINT}/${encodeURIComponent(code)}.json?fields=${encodeURIComponent(
+    FIELDS,
+  )}&lc=en`;
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`Barcode lookup failed (${res.status})`);
+  const data = (await res.json()) as OFFProductResponse;
+  // OFF returns { status: 0 } when the barcode isn't in the database.
+  if (data.status !== 1 || !data.product) return null;
+  return productToHit(data.product);
+}
+
+function productToHit(p: OFFProduct): FoodHit | null {
+  const n = p.nutriments;
+  if (!n) return null;
+  const kcal = n["energy-kcal_100g"];
+  // Skip entries with no usable kcal — they're unhelpful for a nutrition app.
+  if (typeof kcal !== "number" || kcal <= 0) return null;
+  const name = (
+    p.product_name_en ||
+    p.product_name ||
+    p.generic_name_en ||
+    p.generic_name ||
+    ""
+  ).trim();
+  if (!name) return null;
+  return {
+    name,
+    brand: p.brands?.split(",")[0]?.trim() || undefined,
+    kcalPer100: round(kcal),
+    proteinPer100: round(n.proteins_100g ?? 0),
+    carbsPer100: round(n.carbohydrates_100g ?? 0),
+    fatPer100: round(n.fat_100g ?? 0),
+    category: guessCategory(p.categories_tags ?? []),
+  };
 }
 
 function round(n: number): number {

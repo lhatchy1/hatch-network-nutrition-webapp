@@ -148,6 +148,54 @@ dialog form { margin: 0; }
 .food-hit-name { font-weight: 600; }
 .food-hit-macros { font-size: 0.85rem; }
 
+/* Barcode scanner modal */
+.scanner-dialog {
+  max-width: min(40rem, 100vw);
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: var(--pico-card-background-color);
+}
+.scanner-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.65);
+}
+.scanner-shell {
+  margin: 0;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.scanner-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.scanner-head button { margin: 0; }
+.scanner-stage {
+  position: relative;
+  background: #000;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+}
+.scanner-stage video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.scanner-reticle {
+  position: absolute;
+  inset: 25% 10%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 0.5rem;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+.scanner-hint { margin: 0; text-align: center; }
+
 @media (max-width: 640px) {
   header nav ul:first-child strong { font-size: 1rem; }
   #main-nav { gap: 0.25rem; }

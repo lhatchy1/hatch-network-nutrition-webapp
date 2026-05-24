@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@picocss/pico": "^2.0.6",
+    "@zxing/browser": "^0.2.0",
     "alpinejs": "^3.14.1"
   },
   "devDependencies": {

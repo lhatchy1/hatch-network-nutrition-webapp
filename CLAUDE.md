@@ -94,6 +94,11 @@ Actions** set once before the first deploy can publish.
 
 ## Gotchas
 
+- **Barcode scanner is lazy-loaded.** `src/ui/barcodeScanner.ts` pulls in
+  `@zxing/browser` (~114 KB gzipped). Import it via `await import("./barcodeScanner")`
+  inside the click handler so the initial bundle stays slim — never
+  static-import it from anything the app loads on boot. Camera access
+  requires `getUserMedia`, which on iOS only works on HTTPS origins.
 - **Custom domain.** The site is served at `https://food.hatchnetwork.ch/`
   via a DNS `CNAME` pointing the `food` subdomain at `lhatchy1.github.io`.
   `public/CNAME` ships in the Pages artifact to persist the
