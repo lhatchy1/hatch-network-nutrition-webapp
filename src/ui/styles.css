@@ -196,6 +196,46 @@ dialog form { margin: 0; }
 }
 .scanner-hint { margin: 0; text-align: center; }
 
+/* Auth gate */
+.auth-card {
+  max-width: 24rem;
+  margin: 3rem auto;
+}
+.auth-error {
+  color: var(--bad);
+  margin: 0.25rem 0;
+}
+
+/* Settings: slot list */
+.slot-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+}
+.slot-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0 0 0.4rem;
+}
+.slot-row input.slot-label {
+  flex: 1 1 auto;
+  margin: 0;
+}
+.slot-row button {
+  margin: 0;
+  padding: 0.25rem 0.55rem;
+}
+
+/* Share cards */
+.share-card {
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+}
+.share-card p { margin: 0.25rem 0; }
+
 @media (max-width: 640px) {
   header nav ul:first-child strong { font-size: 1rem; }
   #main-nav { gap: 0.25rem; }

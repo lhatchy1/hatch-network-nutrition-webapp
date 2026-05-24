@@ -4,6 +4,7 @@ import type { Ingredient, Meal } from "../types";
 import { mealNutrition, fmtMacro } from "../nutrition";
 import { esc, html, raw, confirmAction } from "../ui/components";
 import { mountFoodSearchPanel } from "../ui/foodSearchPanel";
+import { shareMeal, isSignedIn } from "../firebase/sharing";
 
 interface ViewState {
   editingId: string | null;
@@ -72,6 +73,21 @@ function renderList(target: HTMLElement): void {
     });
   });
 
+  target.querySelectorAll<HTMLElement>("[data-share]").forEach((el) => {
+    el.addEventListener("click", async () => {
+      const id = el.dataset.share!;
+      const m = store.meals.find((x) => x.id === id);
+      if (!m) return;
+      if (!confirmAction(`Share "${m.name}" to the public area? Its ingredients will be included so others can use it standalone.`)) return;
+      try {
+        await shareMeal(store, m);
+        alert("Shared. Browse it under the Share tab.");
+      } catch (err) {
+        alert("Couldn't share: " + (err instanceof Error ? err.message : String(err)));
+      }
+    });
+  });
+
   target.querySelectorAll<HTMLElement>("[data-del]").forEach((el) => {
     el.addEventListener("click", () => {
       const id = el.dataset.del!;
@@ -104,6 +120,7 @@ function renderCard(m: Meal): string {
       <div class="row" style="margin-top: 0.5rem">
         <button class="outline" data-open="${esc(m.id)}">Edit</button>
         <button class="outline" data-dup="${esc(m.id)}">Duplicate</button>
+        ${isSignedIn() ? `<button class="outline" data-share="${esc(m.id)}">Share</button>` : ""}
         <button class="outline secondary" data-del="${esc(m.id)}">Delete</button>
       </div>
     </article>

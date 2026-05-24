@@ -6,7 +6,7 @@ import type {
   Nutrition,
   SlotKey,
 } from "./types";
-import { DAYS, SLOTS } from "./types";
+import { DAYS } from "./types";
 
 const EMPTY: Nutrition = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
 
@@ -44,8 +44,8 @@ export function mealNutrition(meal: Meal, ingredients: Ingredient[]): Nutrition 
 
 export function dayTotals(state: AppState, day: DayKey): Nutrition {
   const total = { ...EMPTY };
-  for (const { key: slot } of SLOTS) {
-    const mealId = state.week[day][slot];
+  for (const slot of state.slots) {
+    const mealId = state.week[day][slot.id];
     if (!mealId) continue;
     const meal = state.meals.find((m) => m.id === mealId);
     if (!meal) continue;

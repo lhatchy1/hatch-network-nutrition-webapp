@@ -1,23 +1,25 @@
 import { getStore } from "../store";
-import { DAYS, SLOTS } from "../types";
+import { DAYS } from "../types";
 import type { DayKey, SlotKey } from "../types";
 import { dayTotals, fmtMacro, weekAverages } from "../nutrition";
 import { emptyWeek } from "../state";
 import { esc, html, raw, confirmAction } from "../ui/components";
+import { shareWeekPlan, isSignedIn } from "../firebase/sharing";
 
 export function renderWeek(target: HTMLElement): void {
   const store = getStore();
   const cells: string[] = [];
+  const slots = store.slots;
 
   // Header row: blank corner + day labels
   cells.push(`<div class="cell head"></div>`);
   for (const { label } of DAYS) cells.push(`<div class="cell head">${esc(label)}</div>`);
 
   // Slot rows
-  for (const { key: slot, label: slotLabel } of SLOTS) {
-    cells.push(`<div class="cell slot-label">${esc(slotLabel)}</div>`);
+  for (const slot of slots) {
+    cells.push(`<div class="cell slot-label">${esc(slot.label)}</div>`);
     for (const { key: day } of DAYS) {
-      cells.push(`<div class="cell">${slotSelect(day, slot)}</div>`);
+      cells.push(`<div class="cell">${slotSelect(day, slot.id)}</div>`);
     }
   }
 
@@ -37,17 +39,22 @@ export function renderWeek(target: HTMLElement): void {
   const kcalClass = vsTarget(avg.kcal, store.targets.kcal, 100);
   const proteinClass = vsTarget(avg.protein, store.targets.protein, 10, true);
 
+  const emptySlots = slots.length === 0;
+
   target.innerHTML = html`
     <div class="view-header">
       <h2>Week</h2>
       <div class="row">
+        <button id="share-week" class="outline">Share this week</button>
         <button id="dup-week" class="outline">Duplicate previous week</button>
         <button id="clear-week" class="outline secondary">Clear week</button>
       </div>
     </div>
-    <div class="week-wrap">
-      <div class="week-grid">${raw(cells.join(""))}</div>
-    </div>
+    ${raw(
+      emptySlots
+        ? `<p class="muted">You have no meal slots configured. Open <strong>Settings</strong> and add a slot (e.g. Breakfast, Lunch, Snack) to start planning.</p>`
+        : `<div class="week-wrap"><div class="week-grid" style="grid-template-rows: auto repeat(${slots.length}, auto) auto">${cells.join("")}</div></div>`,
+    )}
     <h3 style="margin-top: 1.5rem">Weekly average</h3>
     <p>
       <span class="${kcalClass}">${fmtMacro(avg.kcal)} kcal</span>
@@ -61,11 +68,11 @@ export function renderWeek(target: HTMLElement): void {
   wire(target);
 }
 
-function slotSelect(day: DayKey, slot: SlotKey): string {
+function slotSelect(day: DayKey, slotId: SlotKey): string {
   const store = getStore();
   const eligible = [...store.meals].sort((a, b) => a.name.localeCompare(b.name));
-  const current = store.week[day][slot];
-  return `<select data-day="${day}" data-slot="${slot}">
+  const current = store.week[day]?.[slotId] ?? null;
+  return `<select data-day="${day}" data-slot="${esc(slotId)}">
     <option value="">— empty —</option>
     ${eligible
       .map(
@@ -93,17 +100,32 @@ function wire(target: HTMLElement): void {
   target.querySelectorAll<HTMLSelectElement>("select[data-day]").forEach((sel) => {
     sel.addEventListener("change", () => {
       const day = sel.dataset.day as DayKey;
-      const slot = sel.dataset.slot as SlotKey;
-      store.week[day][slot] = sel.value || null;
+      const slotId = sel.dataset.slot as SlotKey;
+      if (!store.week[day]) store.week[day] = {};
+      store.week[day][slotId] = sel.value || null;
       renderWeek(target);
     });
   });
 
   target.querySelector("#clear-week")?.addEventListener("click", () => {
     if (!confirmAction("Clear all slots for this week?")) return;
-    store.week = emptyWeek();
+    store.week = emptyWeek(store.slots);
     store.shoppingChecked = [];
     renderWeek(target);
+  });
+
+  target.querySelector("#share-week")?.addEventListener("click", async () => {
+    if (!isSignedIn()) {
+      alert("Sign in to share content.");
+      return;
+    }
+    if (!confirmAction("Share this week plan to the public area? It will include the meals and ingredients used.")) return;
+    try {
+      await shareWeekPlan(store);
+      alert("Week plan shared. Open the Share tab to see it.");
+    } catch (err) {
+      alert("Couldn't share: " + (err instanceof Error ? err.message : String(err)));
+    }
   });
 
   // "Duplicate previous week" — no week history yet, so this re-applies the

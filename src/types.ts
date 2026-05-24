@@ -42,7 +42,14 @@ export interface Meal {
 }
 
 export type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
-export type SlotKey = "bridge" | "lunch" | "dinner";
+
+// Slot keys are user-defined strings (the slot's id).
+export type SlotKey = string;
+
+export interface MealSlot {
+  id: SlotKey;
+  label: string;
+}
 
 export const DAYS: { key: DayKey; label: string }[] = [
   { key: "mon", label: "Mon" },
@@ -54,14 +61,17 @@ export const DAYS: { key: DayKey; label: string }[] = [
   { key: "sun", label: "Sun" },
 ];
 
-export const SLOTS: { key: SlotKey; label: string }[] = [
-  { key: "bridge", label: "Bridge" },
-  { key: "lunch", label: "Lunch" },
-  { key: "dinner", label: "Dinner" },
+// Default slots preserve the historical bridge/lunch/dinner ids so older
+// saved week plans keep their meal assignments after the slots became
+// user-configurable.
+export const DEFAULT_SLOTS: MealSlot[] = [
+  { id: "bridge", label: "Bridge" },
+  { id: "lunch", label: "Lunch" },
+  { id: "dinner", label: "Dinner" },
 ];
 
 export type WeekPlan = {
-  [D in DayKey]: { [S in SlotKey]: string | null };
+  [D in DayKey]: { [slotId: string]: string | null };
 };
 
 export interface Targets {
@@ -69,12 +79,18 @@ export interface Targets {
   protein: number;
 }
 
+export interface UserProfile {
+  displayName: string;
+}
+
 export interface AppState {
   ingredients: Ingredient[];
   meals: Meal[];
+  slots: MealSlot[];
   week: WeekPlan;
   targets: Targets;
   shoppingChecked: string[];
+  profile: UserProfile;
 }
 
 export interface Nutrition {

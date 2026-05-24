@@ -1,5 +1,5 @@
 import type { AppState, IngredientCategory, Unit } from "./types";
-import { DAYS, INGREDIENT_CATEGORIES, SLOTS } from "./types";
+import { DAYS, INGREDIENT_CATEGORIES } from "./types";
 
 export interface ShoppingLine {
   ingredientId: string;
@@ -14,8 +14,8 @@ export type ShoppingGroups = { category: IngredientCategory; lines: ShoppingLine
 export function aggregateShopping(state: AppState): ShoppingGroups {
   const totals = new Map<string, number>();
   for (const { key: day } of DAYS) {
-    for (const { key: slot } of SLOTS) {
-      const mealId = state.week[day][slot];
+    for (const slot of state.slots) {
+      const mealId = state.week[day][slot.id];
       if (!mealId) continue;
       const meal = state.meals.find((m) => m.id === mealId);
       if (!meal) continue;
