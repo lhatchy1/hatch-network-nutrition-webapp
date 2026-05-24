@@ -8,7 +8,7 @@ A lightweight, single-user web app for planning weekly meals, tracking nutrition
 
 - Single-page web app, fully client-side, no backend
 - Build a library of reusable ingredients and meals
-- Plan a week (bridge / lunch / dinner per day) and see daily nutrition totals
+- Plan a week (lunch + dinner per day) and see daily nutrition totals
 - Auto-generate a shopping list from the weekly plan
 - Persist everything locally; export/import as JSON for backup or sync
 - Mobile-friendly (will mostly be used on a phone in the kitchen)
@@ -18,21 +18,18 @@ A lightweight, single-user web app for planning weekly meals, tracking nutrition
 
 - No user accounts, auth, or multi-user support
 - No backend, database, or cloud sync (export/import covers this)
-- No recipe scraping
-- Nutrition lookups use the public Open Food Facts API (no API key, runs
-  client-side); barcode scan is camera-based via `@zxing/browser` (lazy-loaded
-  ~114 KB gzipped); manual entry remains for custom items
+- No recipe scraping, barcode scanning, or external nutrition APIs (manual entry only, for now)
 - No calorie tracking against actual consumption — this is a *planning* tool, not a food diary
 
 ## Stack
 
 - **Vite + TypeScript**, vanilla — no React, Vue, Svelte, etc.
-- **Alpine.js** (~15 KB) for reactivity
-- **Pico.css** for default styling (classless, built-in dark mode, ~10 KB gzipped)
+- Optional: **Alpine.js** (~15 KB) for reactivity, OR plain DOM updates
+- **Pico.css** or **Water.css** for default styling (classless CSS, minimal bundle)
 - **localStorage** for persistence
 - **PWA**: web manifest + service worker for offline + installable
-- **Deploy**: GitHub Pages via GitHub Actions (`actions/deploy-pages@v4`); main triggers a build & deploy. Served from the custom domain `food.hatchnetwork.ch` via a DNS `CNAME` → `lhatchy1.github.io`; `public/CNAME` ships in the artifact and Vite `base` is `/`.
-- No hard bundle-size budget — favour clarity and small deps, but no obsessive byte-counting
+- Target bundle size: under 50 KB gzipped
+- No `node_modules` larger than necessary; favour zero-dependency solutions
 
 ## Data model
 
@@ -45,7 +42,7 @@ interface Ingredient {
   proteinPer100: number;      // grams
   carbsPer100: number;        // grams
   fatPer100: number;          // grams
-  category: "Protein" | "Carbs" | "Produce" | "Dairy" | "Pantry" | "Other";
+  category?: string;          // "Protein" | "Carbs" | "Produce" | "Dairy" | "Pantry"
 }
 
 interface MealIngredient {
@@ -58,6 +55,7 @@ interface Meal {
   name: string;
   servings: number;           // recipe yields this many servings
   ingredients: MealIngredient[];
+  tags: ("lunch" | "dinner" | "bridge" | "snack")[];
   notes?: string;             // optional prep notes
 }
 
@@ -94,23 +92,16 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 ### 1. Ingredients
 
 - Table: name, unit, kcal/100, protein/100, carbs/100, fat/100, category
-- Add via **Open Food Facts**:
-  - **Scan** a barcode with the device camera (EAN-13 / EAN-8 / UPC-A /
-    UPC-E) — the scanner is code-split and only loads on demand
-  - or type a name and pick from live matches
-  - or fall back to manual entry for custom items
-- Edit / delete rows inline
-- Filter your list by name and category
+- Add / edit / delete rows inline or via a small modal
+- Search/filter by name and category
 - Sort by any column
 
 ### 2. Meals
 
-- List view: meal name, kcal/serving, protein/serving
+- List view: meal name, tags, kcal/serving, protein/serving
 - Detail/edit view:
-  - Name, servings, notes
-  - Add ingredients: pick from the library, or use **+ Search foods** to
-    look up a new ingredient and attach it in one step (defaults to 100 g
-    — adjust after)
+  - Name, servings, tags, notes
+  - Add ingredients: pick from ingredient library + enter amount
   - Live-calculated nutrition per serving
 - “Duplicate meal” button (handy for variants)
 - Delete with confirmation
@@ -118,11 +109,10 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 ### 3. Week
 
 - Grid: 7 columns (Mon–Sun), 3 rows (bridge, lunch, dinner)
-- Each cell: dropdown of every meal in the library, or "empty"
+- Each cell: dropdown of meals (filtered by tag) or “empty”
 - Per-day totals row at bottom: kcal, protein
 - Weekly average row, with colour-coded deficit/surplus vs target
-- "Clear week" action
-- "Duplicate previous week" is deferred — depends on week-history (see Future enhancements). The button is present but shows a placeholder message.
+- “Clear week” and “Duplicate previous week” actions
 
 ### 4. Shopping list
 
@@ -141,19 +131,18 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 
 ## Import / export
 
-- A gear icon in the header opens a Settings modal containing:
+- Settings view (or buttons in a header menu):
   - **Export JSON** — downloads `mealprep-YYYY-MM-DD.json`
   - **Import JSON** — file picker; validates shape, confirms before overwriting
-  - **Copy import prompt** — copies a self-contained schema brief (`IMPORT.md`) to the clipboard, so any chat can generate import-ready JSON. See [`IMPORT.md`](./IMPORT.md).
   - **Reset all data** — confirms, then clears localStorage
   - **Edit targets** — kcal and protein
 - This is the de facto sync mechanism between devices (drop the file in iCloud/Drive)
 
 ## PWA
 
-- `public/manifest.webmanifest` with name, icons (192, 512 PNG + SVG), `display: "standalone"`
-- `public/sw.js` caches the app shell stale-while-revalidate for offline use
-- Versioned cache key (`mealprep-v<n>`) — bump `CACHE_VERSION` in `sw.js` on shape-breaking releases so old assets evict
+- `manifest.webmanifest` with name, icons (192, 512), `display: "standalone"`
+- Service worker caches the app shell for offline use
+- Versioned cache so updates roll out cleanly
 
 ## UI / UX principles
 
@@ -164,46 +153,31 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 - Confirm before destructive actions (delete, reset)
 - No analytics, no telemetry, no external requests once loaded
 
-## File structure
+## File structure (suggested)
 
 ```
 /
-├── .github/workflows/deploy.yml   # build + Pages deploy on push to main
-├── IMPORT.md                      # JSON schema + chat-ready prompt
-├── README.md
-├── spec.md                        # this file
-├── CLAUDE.md                      # developer / agent handbook
-├── index.html                     # app shell, mounts #view + settings dialog
-├── vite.config.ts                 # base = "/" (subdomain root)
+├── index.html
+├── manifest.webmanifest
+├── sw.js
+├── src/
+│   ├── main.ts           # entry, router, state init
+│   ├── state.ts          # AppState, load/save, mutations
+│   ├── nutrition.ts      # mealNutrition, dayTotals, weekTotals
+│   ├── shopping.ts       # shoppingList aggregation + unit formatting
+│   ├── views/
+│   │   ├── ingredients.ts
+│   │   ├── meals.ts
+│   │   ├── week.ts
+│   │   └── shopping.ts
+│   └── ui/
+│       ├── components.ts # small render helpers
+│       └── styles.css
+├── public/
+│   └── icons/            # PWA icons
+├── vite.config.ts
 ├── tsconfig.json
-├── package.json
-├── scripts/
-│   └── generate-icons.mjs         # pure-Node PNG generator for PWA icons
-├── public/                        # copied verbatim into dist/ root
-│   ├── CNAME                      # food.hatchnetwork.ch (persists Pages custom domain)
-│   ├── manifest.webmanifest
-│   ├── sw.js                      # versioned cache, stale-while-revalidate
-│   └── icons/                     # icon-192.png, icon-512.png, icon.svg
-└── src/
-    ├── main.ts                    # entry, hash router, Alpine init, SW register
-    ├── types.ts                   # all shared TS types + day/slot/category enums
-    ├── state.ts                   # load/save/validate/uid helpers
-    ├── store.ts                   # Alpine store + snapshot/replaceState
-    ├── nutrition.ts               # mealNutrition, dayTotals, weekAverages
-    ├── shopping.ts                # aggregate + smart unit format + markdown
-    ├── api/
-    │   └── foodSearch.ts          # Open Food Facts wrapper (search + barcode → FoodHit)
-    ├── ui/
-    │   ├── components.ts          # esc/html tagged template, confirmAction
-    │   ├── foodSearchPanel.ts     # shared search-and-pick panel
-    │   ├── barcodeScanner.ts      # camera modal + ZXing (loaded on demand)
-    │   └── styles.css             # layout on top of Pico
-    └── views/
-        ├── ingredients.ts
-        ├── meals.ts
-        ├── week.ts
-        ├── shopping.ts
-        └── settings.ts            # gear-icon dialog: targets, JSON, copy prompt, reset
+└── package.json
 ```
 
 ## Acceptance checklist
@@ -217,6 +191,7 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 - [ ] App works offline after first load (PWA)
 - [ ] Data survives page reload
 - [ ] Mobile layout is usable one-handed
+- [ ] Total JS bundle under 50 KB gzipped
 
 ## Future enhancements (out of scope for v1)
 
