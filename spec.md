@@ -8,7 +8,7 @@ A lightweight, single-user web app for planning weekly meals, tracking nutrition
 
 - Single-page web app, fully client-side, no backend
 - Build a library of reusable ingredients and meals
-- Plan a week (lunch + dinner per day) and see daily nutrition totals
+- Plan a week (bridge / lunch / dinner per day) and see daily nutrition totals
 - Auto-generate a shopping list from the weekly plan
 - Persist everything locally; export/import as JSON for backup or sync
 - Mobile-friendly (will mostly be used on a phone in the kitchen)
@@ -42,7 +42,7 @@ interface Ingredient {
   proteinPer100: number;      // grams
   carbsPer100: number;        // grams
   fatPer100: number;          // grams
-  category?: string;          // "Protein" | "Carbs" | "Produce" | "Dairy" | "Pantry"
+  category: "Protein" | "Carbs" | "Produce" | "Dairy" | "Pantry" | "Other";
 }
 
 interface MealIngredient {
@@ -109,10 +109,11 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 ### 3. Week
 
 - Grid: 7 columns (Mon–Sun), 3 rows (bridge, lunch, dinner)
-- Each cell: dropdown of meals (filtered by tag) or “empty”
+- Each cell: dropdown of meals (filtered by tag) or "empty"
 - Per-day totals row at bottom: kcal, protein
 - Weekly average row, with colour-coded deficit/surplus vs target
-- “Clear week” and “Duplicate previous week” actions
+- "Clear week" action
+- "Duplicate previous week" is deferred — depends on week-history (see Future enhancements). The button is present but shows a placeholder message.
 
 ### 4. Shopping list
 
@@ -134,15 +135,16 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 - A gear icon in the header opens a Settings modal containing:
   - **Export JSON** — downloads `mealprep-YYYY-MM-DD.json`
   - **Import JSON** — file picker; validates shape, confirms before overwriting
+  - **Copy import prompt** — copies a self-contained schema brief (`IMPORT.md`) to the clipboard, so any chat can generate import-ready JSON. See [`IMPORT.md`](./IMPORT.md).
   - **Reset all data** — confirms, then clears localStorage
   - **Edit targets** — kcal and protein
 - This is the de facto sync mechanism between devices (drop the file in iCloud/Drive)
 
 ## PWA
 
-- `manifest.webmanifest` with name, icons (192, 512), `display: "standalone"`
-- Service worker caches the app shell for offline use
-- Versioned cache so updates roll out cleanly
+- `public/manifest.webmanifest` with name, icons (192, 512 PNG + SVG), `display: "standalone"`
+- `public/sw.js` caches the app shell stale-while-revalidate for offline use
+- Versioned cache key (`mealprep-v<n>`) — bump `CACHE_VERSION` in `sw.js` on shape-breaking releases so old assets evict
 
 ## UI / UX principles
 
@@ -153,31 +155,41 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 - Confirm before destructive actions (delete, reset)
 - No analytics, no telemetry, no external requests once loaded
 
-## File structure (suggested)
+## File structure
 
 ```
 /
-├── index.html
-├── manifest.webmanifest
-├── sw.js
-├── src/
-│   ├── main.ts           # entry, router, state init
-│   ├── state.ts          # AppState, load/save, mutations
-│   ├── nutrition.ts      # mealNutrition, dayTotals, weekTotals
-│   ├── shopping.ts       # shoppingList aggregation + unit formatting
-│   ├── views/
-│   │   ├── ingredients.ts
-│   │   ├── meals.ts
-│   │   ├── week.ts
-│   │   └── shopping.ts
-│   └── ui/
-│       ├── components.ts # small render helpers
-│       └── styles.css
-├── public/
-│   └── icons/            # PWA icons
-├── vite.config.ts
+├── .github/workflows/deploy.yml   # build + Pages deploy on push to main
+├── IMPORT.md                      # JSON schema + chat-ready prompt
+├── README.md
+├── spec.md                        # this file
+├── CLAUDE.md                      # developer / agent handbook
+├── index.html                     # app shell, mounts #view + settings dialog
+├── vite.config.ts                 # base path = /<repo-name>/
 ├── tsconfig.json
-└── package.json
+├── package.json
+├── scripts/
+│   └── generate-icons.mjs         # pure-Node PNG generator for PWA icons
+├── public/                        # copied verbatim into dist/ root
+│   ├── manifest.webmanifest
+│   ├── sw.js                      # versioned cache, stale-while-revalidate
+│   └── icons/                     # icon-192.png, icon-512.png, icon.svg
+└── src/
+    ├── main.ts                    # entry, hash router, Alpine init, SW register
+    ├── types.ts                   # all shared TS types + day/slot/tag/category enums
+    ├── state.ts                   # load/save/validate/uid helpers
+    ├── store.ts                   # Alpine store + snapshot/replaceState
+    ├── nutrition.ts               # mealNutrition, dayTotals, weekAverages
+    ├── shopping.ts                # aggregate + smart unit format + markdown
+    ├── ui/
+    │   ├── components.ts          # esc/html tagged template, confirmAction
+    │   └── styles.css             # layout on top of Pico
+    └── views/
+        ├── ingredients.ts
+        ├── meals.ts
+        ├── week.ts
+        ├── shopping.ts
+        └── settings.ts            # gear-icon dialog: targets, JSON, copy prompt, reset
 ```
 
 ## Acceptance checklist
