@@ -109,6 +109,19 @@ remote updates back to the server).
 - **Bundled docs via `?raw`.** `IMPORT.md` is imported by
   `views/settings.ts` as `?raw` so the in-app copy stays in lockstep
   with the repo doc — don't duplicate it as a TS constant.
+- **JSON import is library-only.** The `Import JSON…` flow merges
+  ingredients and meals into the library with fresh ids; it does
+  **not** transport slots, the week plan, targets or the profile.
+  Use the **Share** tab to move week plans (and meal/ingredient
+  packages) between accounts — sharing handles the dependency graph
+  and re-ids on adoption. `validateImport` + `mergeImport` live in
+  `state.ts`; widening the import payload requires updating
+  `IMPORT.md` too.
+- **Export is a full snapshot.** Even though import is library-only,
+  `Export JSON` serialises the entire `AppState` so users have a
+  proper backup file. If you ever wire up a "restore from backup"
+  flow, that's a different path from `Import JSON…` and should keep
+  the "overwrite all data" confirmation.
 
 ## Nutrition data (Open Food Facts)
 
@@ -143,7 +156,7 @@ into our six ingredient categories via `guessCategory`.
 | New view | Add `src/views/<name>.ts`, register in `ROUTES` in `main.ts`, add a link to the nav (auto-generated from `ROUTES`) |
 | Tweak default meal slots | `src/types.ts` (`DEFAULT_SLOTS`). Live slots are stored in `state.slots` and editable per-user from Settings. |
 | New ingredient category | `src/types.ts` (`INGREDIENT_CATEGORIES`) — listed categories drive the shopping-list grouping order. Also update `guessCategory` in `src/api/foodSearch.ts` so Open Food Facts hits map into it. |
-| Storage shape change | Bump key in `src/state.ts` (`STORAGE_KEY`) **and** bump `CACHE_VERSION` in `public/sw.js`. Update `validateImport` and `normalise`. Add the field to the `void s.foo` list in `main.ts` and to `snapshot()` / `replaceState()` / `reseedStore()` in `store.ts`. |
+| Storage shape change | Bump key in `src/state.ts` (`STORAGE_KEY`) **and** bump `CACHE_VERSION` in `public/sw.js`. Update `normalise`. Add the field to the `void s.foo` list in `main.ts` and to `snapshot()` / `replaceState()` / `reseedStore()` in `store.ts`. If the new field belongs in the JSON-import payload too, also update `validateImport` and `mergeImport` (and `IMPORT.md`). |
 | New shareable kind | Add to `ShareKind` in `src/firebase/sharing.ts`, define a `Shared*` interface, add a tab in `src/views/share.ts`, and update `firestore.rules`. |
 | Change custom domain | DNS `CNAME` at the registrar, `public/CNAME`, Settings → Pages → Custom domain, and `base` in `vite.config.ts` (`/` for a subdomain root, `/<subpath>/` if you ever subpath-serve again) |
 

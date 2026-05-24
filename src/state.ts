@@ -1,4 +1,4 @@
-import type { AppState, MealSlot, WeekPlan } from "./types";
+import type { AppState, Ingredient, Meal, MealSlot, WeekPlan } from "./types";
 import { DAYS, DEFAULT_SLOTS } from "./types";
 
 // Bumped from v1 to v2 when slots / profile were added — see normalise().
@@ -189,13 +189,66 @@ export function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-// Shape check for imported JSON. Returns null on failure.
-export function validateImport(input: unknown): AppState | null {
+export interface ImportPayload {
+  ingredients: Ingredient[];
+  meals: Meal[];
+}
+
+// Shape check for imported JSON. Library-only — week plans, slots,
+// targets, etc. are user-personal and not transported via this flow
+// (use the Share tab for week plans, or re-enter them from Settings).
+// Returns null if the payload is shaped wrong or carries nothing useful.
+export function validateImport(input: unknown): ImportPayload | null {
   if (!input || typeof input !== "object") return null;
-  const obj = input as Partial<AppState>;
-  if (!Array.isArray(obj.ingredients) || !Array.isArray(obj.meals)) return null;
-  if (!obj.week || typeof obj.week !== "object") return null;
-  return normalise(obj);
+  const obj = input as { ingredients?: unknown; meals?: unknown };
+  const ingredients = Array.isArray(obj.ingredients) ? obj.ingredients : [];
+  const meals = Array.isArray(obj.meals) ? obj.meals : [];
+  if (ingredients.length === 0 && meals.length === 0) return null;
+
+  for (const i of ingredients) {
+    if (!i || typeof i !== "object") return null;
+    const ing = i as Partial<Ingredient>;
+    if (typeof ing.name !== "string" || typeof ing.id !== "string") return null;
+  }
+  for (const m of meals) {
+    if (!m || typeof m !== "object") return null;
+    const meal = m as Partial<Meal>;
+    if (typeof meal.name !== "string" || typeof meal.id !== "string") return null;
+    if (!Array.isArray(meal.ingredients)) return null;
+  }
+  return { ingredients: ingredients as Ingredient[], meals: meals as Meal[] };
+}
+
+// Merge an import payload into the current store. All payload entities
+// get fresh IDs so re-importing the same file won't clobber existing
+// items; meal→ingredient references are rewritten through the same
+// id map. Returns counts so the UI can confirm what happened.
+export function mergeImport(
+  state: AppState,
+  payload: ImportPayload,
+): { ingredients: number; meals: number } {
+  const idMap = new Map<string, string>();
+  const newIngredients: Ingredient[] = [];
+  for (const ing of payload.ingredients) {
+    const id = uid();
+    idMap.set(ing.id, id);
+    newIngredients.push({ ...ing, id });
+  }
+  const newMeals: Meal[] = [];
+  for (const m of payload.meals) {
+    const id = uid();
+    newMeals.push({
+      ...m,
+      id,
+      ingredients: m.ingredients.map((mi) => ({
+        ingredientId: idMap.get(mi.ingredientId) ?? mi.ingredientId,
+        amount: mi.amount,
+      })),
+    });
+  }
+  state.ingredients = [...state.ingredients, ...newIngredients];
+  state.meals = [...state.meals, ...newMeals];
+  return { ingredients: newIngredients.length, meals: newMeals.length };
 }
 
 export function exportFilename(date = new Date()): string {
