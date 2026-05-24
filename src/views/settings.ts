@@ -1,6 +1,8 @@
 import { getStore, replaceState, snapshot } from "../store";
 import { clearStorage, defaultState, exportFilename, validateImport } from "../state";
 import { esc, html, raw, confirmAction } from "../ui/components";
+// Bundled at build time so the in-app prompt and the repo doc never drift.
+import importPrompt from "../../IMPORT.md?raw";
 
 export function openSettings(dialog: HTMLDialogElement, onChange: () => void): void {
   const store = getStore();
@@ -28,6 +30,10 @@ export function openSettings(dialog: HTMLDialogElement, onChange: () => void): v
         <input id="import-file" type="file" accept="application/json,.json" hidden />
       </div>
       <p class="muted"><small>Drop the exported file in iCloud/Drive to sync between devices.</small></p>
+
+      <h4>Generate JSON with a chat</h4>
+      <p class="muted"><small>Copies a self-contained schema + example brief. Paste into any chat, describe your week, and import the JSON it produces.</small></p>
+      <button id="copy-prompt-btn" class="outline">Copy import prompt</button>
 
       <h4>Reset</h4>
       <button id="reset-btn" class="outline secondary">Reset all data</button>
@@ -82,6 +88,15 @@ export function openSettings(dialog: HTMLDialogElement, onChange: () => void): v
       alert("Couldn't read that file: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       fileInput.value = "";
+    }
+  });
+
+  dialog.querySelector("#copy-prompt-btn")?.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(importPrompt);
+      alert("Import prompt copied to clipboard.");
+    } catch {
+      window.prompt("Copy the import prompt:", importPrompt);
     }
   });
 
