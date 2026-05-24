@@ -24,12 +24,12 @@ A lightweight, single-user web app for planning weekly meals, tracking nutrition
 ## Stack
 
 - **Vite + TypeScript**, vanilla — no React, Vue, Svelte, etc.
-- Optional: **Alpine.js** (~15 KB) for reactivity, OR plain DOM updates
-- **Pico.css** or **Water.css** for default styling (classless CSS, minimal bundle)
+- **Alpine.js** (~15 KB) for reactivity
+- **Pico.css** for default styling (classless, built-in dark mode, ~10 KB gzipped)
 - **localStorage** for persistence
 - **PWA**: web manifest + service worker for offline + installable
-- Target bundle size: under 50 KB gzipped
-- No `node_modules` larger than necessary; favour zero-dependency solutions
+- **Deploy**: GitHub Pages via GitHub Actions (`actions/deploy-pages@v4`); main triggers a build & deploy. Vite `base` is `/hatch-network-nutrition-webapp/` to match the repo subpath.
+- No hard bundle-size budget — favour clarity and small deps, but no obsessive byte-counting
 
 ## Data model
 
@@ -131,7 +131,7 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 
 ## Import / export
 
-- Settings view (or buttons in a header menu):
+- A gear icon in the header opens a Settings modal containing:
   - **Export JSON** — downloads `mealprep-YYYY-MM-DD.json`
   - **Import JSON** — file picker; validates shape, confirms before overwriting
   - **Reset all data** — confirms, then clears localStorage
@@ -191,7 +191,6 @@ The app has 4 main views. Use tabs or a simple hash-router (`#/ingredients`, `#/
 - [ ] App works offline after first load (PWA)
 - [ ] Data survives page reload
 - [ ] Mobile layout is usable one-handed
-- [ ] Total JS bundle under 50 KB gzipped
 
 ## Future enhancements (out of scope for v1)
 
