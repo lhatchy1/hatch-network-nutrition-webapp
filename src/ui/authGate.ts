@@ -18,19 +18,19 @@ export function renderAuthGate(target: HTMLElement): void {
 
   target.innerHTML = html`
     <article class="auth-card">
-      <header>
+      <header style="margin-bottom: 12px;">
         <h2>Sign in</h2>
-        <p class="muted"><small>Accounts are invite-only — ask Liam for one.</small></p>
+        <p class="muted" style="margin: 4px 0 0; font-size: 13px;">Accounts are invite-only — ask Liam for one.</p>
       </header>
       <form id="signin-form">
-        <label>Email
-          <input type="email" name="email" required autocomplete="username" />
+        <label style="font-size: 12px; color: var(--ink-2);">Email
+          <input type="email" name="email" required autocomplete="username" style="display:block;margin-top:4px;width:100%;" />
         </label>
-        <label>Password
-          <input type="password" name="password" required autocomplete="current-password" />
+        <label style="font-size: 12px; color: var(--ink-2); margin-top: 12px; display: block;">Password
+          <input type="password" name="password" required autocomplete="current-password" style="display:block;margin-top:4px;width:100%;" />
         </label>
         <p id="signin-error" class="auth-error" hidden></p>
-        <button type="submit" id="signin-submit">Sign in</button>
+        <button class="btn primary" type="submit" id="signin-submit" style="margin-top: 12px;">Sign in</button>
       </form>
     </article>
   `;

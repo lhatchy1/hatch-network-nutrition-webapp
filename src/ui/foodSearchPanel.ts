@@ -14,6 +14,8 @@ export interface PanelOptions {
   placeholder?: string;
   /** If set, renders an "Add manually" fallback button; omit to hide it. */
   manualLabel?: string;
+  /** If true, open the barcode scanner as soon as the panel mounts. */
+  autoOpenScanner?: boolean;
 }
 
 const DEBOUNCE_MS = 300;
@@ -21,24 +23,25 @@ const DEBOUNCE_MS = 300;
 export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions): void {
   container.innerHTML = html`
     <div class="food-search">
-      <div class="row">
+      <div class="actions">
         <input
           type="search"
           class="grow"
           data-food-q
           autocomplete="off"
           placeholder="${opts.placeholder ?? "Search foods (e.g. chicken breast)…"}"
+          style="flex: 1 1 200px;"
         />
-        <button data-food-scan title="Scan barcode">📷 Scan</button>
-        <button class="outline secondary" data-food-cancel>Cancel</button>
+        <button class="btn" data-food-scan title="Scan barcode">⌖ Scan</button>
+        <button class="btn ghost" data-food-cancel>Cancel</button>
       </div>
-      <p class="muted food-status" data-food-status>
-        <small>Scan a barcode, or type at least 2 letters. Powered by Open Food Facts.</small>
+      <p class="food-status" data-food-status>
+        Scan a barcode, or type at least 2 letters. Powered by Open Food Facts.
       </p>
       <div class="food-results" data-food-results></div>
       ${raw(
         opts.manualLabel
-          ? `<p><button class="outline" data-food-manual>${esc(opts.manualLabel)}</button></p>`
+          ? `<p style="margin-top:8px;"><button class="btn ghost" data-food-manual>${esc(opts.manualLabel)}</button></p>`
           : "",
       )}
     </div>
@@ -59,7 +62,7 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
   let latestHits: FoodHit[] = [];
 
   const setStatus = (msg: string) => {
-    status.innerHTML = `<small>${esc(msg)}</small>`;
+    status.textContent = msg;
   };
 
   const run = async (q: string) => {
@@ -165,6 +168,10 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
 
   // Autofocus so the user can start typing immediately.
   queueMicrotask(() => input.focus());
+
+  if (opts.autoOpenScanner) {
+    queueMicrotask(() => scanBtn.click());
+  }
 }
 
 function renderResults(target: HTMLElement, hits: FoodHit[]): void {

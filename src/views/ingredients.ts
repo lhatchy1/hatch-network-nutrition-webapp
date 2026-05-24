@@ -6,61 +6,77 @@ import { esc, html, raw, confirmAction } from "../ui/components";
 import { mountFoodSearchPanel } from "../ui/foodSearchPanel";
 import { shareIngredient, isSignedIn } from "../firebase/sharing";
 
-type SortKey = keyof Pick<
-  Ingredient,
-  "name" | "unit" | "kcalPer100" | "proteinPer100" | "carbsPer100" | "fatPer100" | "category"
->;
+type FilterCategory = IngredientCategory | "";
 
 interface ViewState {
   query: string;
-  category: IngredientCategory | "";
-  sort: SortKey;
-  dir: 1 | -1;
+  category: FilterCategory;
   editingId: string | null;
   searching: boolean;
+  scanning: boolean;
 }
 
 const view: ViewState = {
   query: "",
   category: "",
-  sort: "name",
-  dir: 1,
   editingId: null,
   searching: false,
+  scanning: false,
 };
 
 const UNITS: Unit[] = ["g", "ml", "unit"];
+// Category swatches used in the filter pills + cat-tag — Brief lists 5.
+// "Other" stays in the data model but is hidden from the pill row.
+const PILL_CATEGORIES: IngredientCategory[] = ["Protein", "Carbs", "Produce", "Dairy", "Pantry"];
 
 export function renderIngredients(target: HTMLElement): void {
   const store = getStore();
   const filtered = store.ingredients
     .filter((i) => (view.query ? i.name.toLowerCase().includes(view.query.toLowerCase()) : true))
     .filter((i) => (view.category ? i.category === view.category : true))
-    .sort((a, b) => {
-      const av = a[view.sort];
-      const bv = b[view.sort];
-      if (typeof av === "number" && typeof bv === "number") return (av - bv) * view.dir;
-      return String(av).localeCompare(String(bv)) * view.dir;
-    });
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   target.innerHTML = html`
-    <div class="view-header">
-      <h2>Ingredients</h2>
-      <button id="add-ing">+ Add ingredient</button>
+    <div class="page-h">
+      <div>
+        <span class="eyebrow">Library · per 100 g/ml</span>
+        <h1>Ingredients</h1>
+      </div>
+      <button class="btn primary" id="add-ing">＋ Add ingredient</button>
     </div>
+
+    <button class="scan-cta" id="scan-cta">
+      <span class="ic" aria-hidden="true">⌖</span>
+      <div class="body">
+        <div class="t">Scan a barcode</div>
+        <div class="s">Pulls macros from Open Food Facts</div>
+      </div>
+      <span class="arrow" aria-hidden="true">›</span>
+    </button>
+
+    <div class="search-card">
+      <input type="search" id="ing-search" value="${esc(view.query)}" placeholder="Filter your list…" />
+    </div>
+
+    <div class="filter-pills">
+      <button class="pill ${view.category === "" ? "cur" : ""}" data-cat="">All</button>
+      ${raw(
+        PILL_CATEGORIES.map(
+          (c) =>
+            `<button class="pill ${view.category === c ? "cur" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`,
+        ).join(""),
+      )}
+    </div>
+
     <div id="ing-search-panel"></div>
-    <div class="row" style="margin-bottom: 0.5rem">
-      <input type="search" id="ing-search" class="grow" placeholder="Filter your list…" value="${view.query}" />
-      <select id="ing-cat">
-        <option value="">All categories</option>
-        ${raw(
-          INGREDIENT_CATEGORIES.map(
-            (c) => `<option value="${esc(c)}" ${view.category === c ? "selected" : ""}>${esc(c)}</option>`,
-          ).join(""),
-        )}
-      </select>
+
+    <div class="ingr-list">
+      ${raw(
+        filtered.length === 0
+          ? `<p class="muted" style="padding: 18px;">${store.ingredients.length === 0 ? "No ingredients yet. Tap ＋ Add ingredient or scan a barcode." : "No ingredients match."}</p>`
+          : filtered.map((r) => renderRowOrEdit(r)).join(""),
+      )}
     </div>
-    ${raw(renderTable(filtered))}
   `;
 
   if (view.searching) {
@@ -68,8 +84,10 @@ export function renderIngredients(target: HTMLElement): void {
     mountFoodSearchPanel(panel, {
       placeholder: "Search foods to auto-fill macros…",
       manualLabel: "Add manually instead",
+      autoOpenScanner: view.scanning,
       onCancel: () => {
         view.searching = false;
+        view.scanning = false;
         renderIngredients(target);
       },
       onPick: (hit) => {
@@ -87,6 +105,7 @@ export function renderIngredients(target: HTMLElement): void {
           };
           store.ingredients.push(fresh);
           view.searching = false;
+          view.scanning = false;
           view.editingId = null;
         } else {
           const fresh: Ingredient = {
@@ -101,6 +120,7 @@ export function renderIngredients(target: HTMLElement): void {
           };
           store.ingredients.push(fresh);
           view.searching = false;
+          view.scanning = false;
           view.editingId = fresh.id;
         }
         renderIngredients(target);
@@ -111,82 +131,54 @@ export function renderIngredients(target: HTMLElement): void {
   wire(target);
 }
 
-function renderTable(rows: Ingredient[]): string {
-  if (rows.length === 0) {
-    return `<p class="muted">No ingredients yet. Click <em>Add ingredient</em> to start.</p>`;
-  }
-  const th = (key: SortKey, label: string, cls = "") => {
-    const arrow = view.sort === key ? (view.dir === 1 ? " ↑" : " ↓") : "";
-    return `<th class="${cls}" style="cursor:pointer" data-sort="${key}">${esc(label)}${arrow}</th>`;
-  };
-  return `
-    <figure>
-    <table role="grid">
-      <thead><tr>
-        ${th("name", "Name")}
-        ${th("unit", "Unit")}
-        ${th("kcalPer100", "kcal", "right")}
-        ${th("proteinPer100", "P", "right")}
-        ${th("carbsPer100", "C", "right")}
-        ${th("fatPer100", "F", "right")}
-        ${th("category", "Category")}
-        <th></th>
-      </tr></thead>
-      <tbody>
-        ${rows.map((r) => renderRow(r)).join("")}
-      </tbody>
-    </table>
-    </figure>
-  `;
+function renderRowOrEdit(r: Ingredient): string {
+  if (view.editingId === r.id) return renderEditCard(r);
+  return renderRow(r);
 }
 
 function renderRow(r: Ingredient): string {
-  if (view.editingId === r.id) return renderEditRow(r);
-  const perLabel = r.unit === "unit" ? "/unit" : "/100";
-  return `
-    <tr class="ingredient-row">
-      <td>${esc(r.name)}</td>
-      <td>${esc(r.unit)}</td>
-      <td class="right nowrap">${fmt(r.kcalPer100)}<small class="muted">${perLabel}</small></td>
-      <td class="right">${fmt(r.proteinPer100)}</td>
-      <td class="right">${fmt(r.carbsPer100)}</td>
-      <td class="right">${fmt(r.fatPer100)}</td>
-      <td>${esc(r.category)}</td>
-      <td class="actions">
-        <button class="outline" data-edit="${esc(r.id)}">Edit</button>
-        ${isSignedIn() ? `<button class="outline" data-share="${esc(r.id)}">Share</button>` : ""}
-        <button class="outline secondary" data-del="${esc(r.id)}">Delete</button>
-      </td>
-    </tr>
-  `;
+  const perLabel = r.unit === "unit" ? "/unit" : "/100" + r.unit;
+  const catSlug = r.category.toLowerCase();
+  return `<div class="ingr-row" data-row="${esc(r.id)}">
+    <div>
+      <div class="nm">${esc(r.name)}</div>
+      <div class="meta">${fmt(r.kcalPer100)} kcal · ${fmt(r.proteinPer100)}P · ${fmt(r.carbsPer100)}C · ${fmt(r.fatPer100)}F ${esc(perLabel)}</div>
+    </div>
+    <div class="right">
+      <span class="cat-tag ${esc(catSlug)}">${esc(r.category)}</span>
+      <button class="row-action" data-edit="${esc(r.id)}" aria-label="Edit">✎</button>
+      ${isSignedIn() ? `<button class="row-action" data-share="${esc(r.id)}" aria-label="Share">↗</button>` : ""}
+      <button class="row-action danger" data-del="${esc(r.id)}" aria-label="Delete">✕</button>
+    </div>
+  </div>`;
 }
 
-function renderEditRow(r: Ingredient): string {
-  return `
-    <tr class="ingredient-row" data-edit-row="${esc(r.id)}">
-      <td><input name="name" value="${esc(r.name)}" /></td>
-      <td>
+function renderEditCard(r: Ingredient): string {
+  return `<div class="ingr-edit" data-edit-row="${esc(r.id)}">
+    <label>Name <input name="name" value="${esc(r.name)}" /></label>
+    <div class="grid" style="margin-top: 10px;">
+      <label>Unit
         <select name="unit">
           ${UNITS.map((u) => `<option value="${u}" ${r.unit === u ? "selected" : ""}>${u}</option>`).join("")}
         </select>
-      </td>
-      <td><input name="kcal" type="number" step="any" value="${r.kcalPer100}" /></td>
-      <td><input name="protein" type="number" step="any" value="${r.proteinPer100}" /></td>
-      <td><input name="carbs" type="number" step="any" value="${r.carbsPer100}" /></td>
-      <td><input name="fat" type="number" step="any" value="${r.fatPer100}" /></td>
-      <td>
+      </label>
+      <label>Category
         <select name="category">
           ${INGREDIENT_CATEGORIES.map(
             (c) => `<option value="${c}" ${r.category === c ? "selected" : ""}>${c}</option>`,
           ).join("")}
         </select>
-      </td>
-      <td class="actions">
-        <button data-save="${esc(r.id)}">Save</button>
-        <button class="outline" data-cancel>Cancel</button>
-      </td>
-    </tr>
-  `;
+      </label>
+      <label>kcal /100 <input name="kcal" type="number" step="any" value="${r.kcalPer100}" /></label>
+      <label>Protein g <input name="protein" type="number" step="any" value="${r.proteinPer100}" /></label>
+      <label>Carbs g <input name="carbs" type="number" step="any" value="${r.carbsPer100}" /></label>
+      <label>Fat g <input name="fat" type="number" step="any" value="${r.fatPer100}" /></label>
+    </div>
+    <div class="actions">
+      <button class="btn primary" data-save="${esc(r.id)}">Save</button>
+      <button class="btn ghost" data-cancel>Cancel</button>
+    </div>
+  </div>`;
 }
 
 function fmt(n: number): string {
@@ -197,7 +189,14 @@ function wire(root: HTMLElement): void {
   const store = getStore();
 
   root.querySelector("#add-ing")?.addEventListener("click", () => {
-    view.searching = !view.searching;
+    view.searching = true;
+    view.scanning = false;
+    renderIngredients(root);
+  });
+
+  root.querySelector("#scan-cta")?.addEventListener("click", () => {
+    view.searching = true;
+    view.scanning = true;
     renderIngredients(root);
   });
 
@@ -206,19 +205,9 @@ function wire(root: HTMLElement): void {
     renderIngredients(root);
   });
 
-  root.querySelector("#ing-cat")?.addEventListener("change", (e) => {
-    view.category = (e.target as HTMLSelectElement).value as IngredientCategory | "";
-    renderIngredients(root);
-  });
-
-  root.querySelectorAll<HTMLElement>("[data-sort]").forEach((el) => {
-    el.addEventListener("click", () => {
-      const key = el.dataset.sort as SortKey;
-      if (view.sort === key) view.dir = view.dir === 1 ? -1 : 1;
-      else {
-        view.sort = key;
-        view.dir = 1;
-      }
+  root.querySelectorAll<HTMLButtonElement>("[data-cat]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      view.category = btn.dataset.cat as FilterCategory;
       renderIngredients(root);
     });
   });
@@ -259,7 +248,7 @@ function wire(root: HTMLElement): void {
   root.querySelectorAll<HTMLElement>("[data-save]").forEach((el) => {
     el.addEventListener("click", () => {
       const id = el.dataset.save!;
-      const row = root.querySelector<HTMLTableRowElement>(`[data-edit-row="${id}"]`);
+      const row = root.querySelector<HTMLElement>(`[data-edit-row="${id}"]`);
       if (!row) return;
       const get = (n: string) =>
         (row.querySelector(`[name="${n}"]`) as HTMLInputElement | HTMLSelectElement).value;
@@ -283,7 +272,6 @@ function wire(root: HTMLElement): void {
   });
 
   root.querySelector<HTMLElement>("[data-cancel]")?.addEventListener("click", () => {
-    // If we cancelled on a freshly-added (still default-named) row, drop it.
     const id = view.editingId;
     if (id) {
       const ing = store.ingredients.find((i) => i.id === id);

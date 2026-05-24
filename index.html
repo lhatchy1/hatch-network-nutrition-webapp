@@ -3,11 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#1095c1" />
+    <meta name="theme-color" content="#f7f1e5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f1d18" media="(prefers-color-scheme: dark)" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <title>Meal Prep Planner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=DM+Mono:wght@300..500&display=swap"
+      rel="stylesheet"
+    />
+    <title>Hatch · Food planner</title>
     <script>
       // Force HTTPS so secure-context APIs (getUserMedia for the barcode
       // scanner, etc.) work. GitHub Pages handles this server-side when
@@ -25,21 +32,34 @@
     </script>
   </head>
   <body>
-    <header class="container">
-      <nav>
-        <ul>
-          <li><strong>Meal Prep</strong></li>
-        </ul>
-        <ul id="main-nav"></ul>
-        <ul>
-          <li>
-            <button id="open-settings" class="outline" aria-label="Settings">⚙︎</button>
-          </li>
-        </ul>
-      </nav>
+    <!-- Desktop nav (hidden below 920px via CSS) -->
+    <nav class="nav" aria-label="Primary">
+      <a class="brand" href="#/week">
+        <span class="leaf" aria-hidden="true">✿</span>
+        <span class="name">hatch</span>
+      </a>
+      <div class="links" role="tablist" id="desktop-nav"></div>
+      <button class="gear" id="open-settings-desktop" aria-label="Open settings">⚙</button>
+    </nav>
+
+    <!-- Mobile top bar (slim brand · context · gear) -->
+    <header class="mtop">
+      <a class="brand" href="#/week">
+        <span class="leaf" aria-hidden="true">✿</span>
+        <span class="name">hatch</span>
+      </a>
+      <span class="ctx" id="mtop-ctx"></span>
+      <button class="gear" id="open-settings-mobile" aria-label="Open settings">⚙</button>
     </header>
-    <main id="view" class="container"></main>
-    <dialog id="settings-dialog"></dialog>
+
+    <main id="view"></main>
+
+    <!-- Mobile bottom tab bar (hidden ≥920px via CSS) -->
+    <nav class="mtabs" aria-label="Primary" id="mobile-tabs"></nav>
+
+    <dialog class="settings" id="settings-dialog" aria-label="Settings"></dialog>
+    <dialog class="meal-picker" id="meal-picker-dialog" aria-label="Pick a meal"></dialog>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

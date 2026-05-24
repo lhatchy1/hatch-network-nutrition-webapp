@@ -40,6 +40,7 @@ export function snapshot(s: Store): AppState {
       targets: s.targets,
       shoppingChecked: s.shoppingChecked,
       profile: s.profile,
+      theme: s.theme,
     }),
   );
 }
@@ -53,6 +54,7 @@ export function replaceState(next: AppState): void {
   s.targets = next.targets;
   s.shoppingChecked = next.shoppingChecked;
   s.profile = next.profile;
+  s.theme = next.theme;
 }
 
 // Re-seed the store from a freshly-loaded AppState (used after sign-in /
@@ -67,4 +69,5 @@ export function reseedStore(next: AppState): void {
   current.targets = next.targets;
   current.shoppingChecked = next.shoppingChecked;
   current.profile = next.profile;
+  current.theme = next.theme;
 }
