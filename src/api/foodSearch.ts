@@ -7,7 +7,7 @@
 //
 // Docs: https://openfoodfacts.github.io/openfoodfacts-server/api/
 
-import type { IngredientCategory } from "../types";
+import type { IngredientCategory, Unit } from "../types";
 
 export interface FoodHit {
   name: string;
@@ -17,6 +17,10 @@ export interface FoodHit {
   carbsPer100: number;
   fatPer100: number;
   category: IngredientCategory;
+  // Some sources (e.g. Migros) tell us whether the per-100 figures are
+  // per 100 g or per 100 ml. OFF doesn't distinguish — leave undefined
+  // there and let consumers default to "g".
+  unit?: Unit;
 }
 
 interface OFFNutriments {

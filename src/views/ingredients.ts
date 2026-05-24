@@ -96,7 +96,7 @@ export function renderIngredients(target: HTMLElement): void {
           const fresh: Ingredient = {
             id: uid(),
             name: hit.brand ? `${hit.name} (${hit.brand})` : hit.name,
-            unit: "g",
+            unit: hit.unit ?? "g",
             kcalPer100: hit.kcalPer100,
             proteinPer100: hit.proteinPer100,
             carbsPer100: hit.carbsPer100,
