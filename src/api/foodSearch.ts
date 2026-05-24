@@ -50,6 +50,49 @@ const PRODUCT_ENDPOINT = "https://world.openfoodfacts.org/api/v2/product";
 const FIELDS =
   "product_name,product_name_en,generic_name,generic_name_en,brands,categories_tags,nutriments";
 
+// OFF's free public API is regularly flaky — individual requests hang
+// or return 5xx, but a quick retry usually succeeds. These knobs let
+// callers cancel via AbortSignal while the fetch helper still budgets
+// each attempt and retries transient failures transparently.
+const REQUEST_TIMEOUT_MS = 8_000;
+const MAX_ATTEMPTS = 3;
+const RETRY_BACKOFF_MS = 400;
+
+async function fetchWithRetry(url: string, signal?: AbortSignal): Promise<Response> {
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const ctrl = new AbortController();
+    const onParentAbort = () => ctrl.abort();
+    signal?.addEventListener("abort", onParentAbort, { once: true });
+    const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal });
+      // Only retry on server-side or transient errors; 4xx is the user
+      // and won't change on retry.
+      if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429)) {
+        return res;
+      }
+      lastErr = new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      // The user-supplied signal aborted; surface immediately.
+      if (signal?.aborted) throw err;
+      lastErr = err;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onParentAbort);
+    }
+    if (attempt < MAX_ATTEMPTS) {
+      await sleep(RETRY_BACKOFF_MS * attempt);
+    }
+  }
+  throw lastErr ?? new Error("Request failed");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function searchFoods(
   query: string,
   signal?: AbortSignal,
@@ -67,7 +110,7 @@ export async function searchFoods(
   // Prefer English-language product names where the entry has one.
   url.searchParams.set("lc", "en");
 
-  const res = await fetch(url.toString(), { signal });
+  const res = await fetchWithRetry(url.toString(), signal);
   if (!res.ok) throw new Error(`Food search failed (${res.status})`);
   const data = (await res.json()) as OFFResponse;
 
@@ -91,7 +134,7 @@ export async function lookupBarcode(
   const url = `${PRODUCT_ENDPOINT}/${encodeURIComponent(code)}.json?fields=${encodeURIComponent(
     FIELDS,
   )}&lc=en`;
-  const res = await fetch(url, { signal });
+  const res = await fetchWithRetry(url, signal);
   if (!res.ok) throw new Error(`Barcode lookup failed (${res.status})`);
   const data = (await res.json()) as OFFProductResponse;
   // OFF returns { status: 0 } when the barcode isn't in the database.

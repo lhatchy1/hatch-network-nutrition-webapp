@@ -29,15 +29,15 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
           class="grow"
           data-food-q
           autocomplete="off"
-          placeholder="${opts.placeholder ?? "Search foods (e.g. chicken breast)…"}"
+          inputmode="search"
+          placeholder="${opts.placeholder ?? "Search foods or paste a barcode…"}"
           style="flex: 1 1 200px;"
         />
         <button class="btn" data-food-scan title="Scan barcode">⌖ Scan</button>
-        <button class="btn" data-food-code title="Type a barcode (EAN/UPC) manually"># Code</button>
         <button class="btn ghost" data-food-cancel>Cancel</button>
       </div>
       <p class="food-status" data-food-status>
-        Scan a barcode, or type at least 2 letters. Powered by Open Food Facts.
+        Scan a barcode, type one, or search by name. Powered by Open Food Facts.
       </p>
       <div class="food-results" data-food-results></div>
       ${raw(
@@ -54,7 +54,6 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
   const manual = container.querySelector<HTMLButtonElement>("[data-food-manual]");
   const cancel = container.querySelector<HTMLButtonElement>("[data-food-cancel]")!;
   const scanBtn = container.querySelector<HTMLButtonElement>("[data-food-scan]")!;
-  const codeBtn = container.querySelector<HTMLButtonElement>("[data-food-code]")!;
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let inflight: AbortController | null = null;
@@ -69,18 +68,48 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
 
   const run = async (q: string) => {
     if (inflight) inflight.abort();
-    if (q.trim().length < 2) {
+    const trimmed = q.trim();
+    if (trimmed.length < 2) {
       latestHits = [];
       results.innerHTML = "";
-      setStatus("Type at least 2 letters. Powered by Open Food Facts.");
+      setStatus("Scan a barcode, type one, or search by name. Powered by Open Food Facts.");
       return;
     }
+
+    // A pure-digit string of 8–14 chars is almost certainly a barcode
+    // (EAN-8 up to EAN-13 / UPC-A); hit the product endpoint directly.
+    // Text-search on a numeric string returns junk on OFF, so this also
+    // covers the "I typed a barcode into the search field" case.
+    const isBarcode = /^\d{8,14}$/.test(trimmed);
+    const mySeq = ++requestSeq;
+
+    if (isBarcode) {
+      setStatus(`Looking up barcode ${trimmed}…`);
+      try {
+        const hit = await lookupBarcode(trimmed);
+        if (mySeq !== requestSeq) return;
+        if (hit) {
+          latestHits = [hit];
+          renderResults(results, [hit]);
+          setStatus("1 match — click to add.");
+        } else {
+          latestHits = [];
+          results.innerHTML = "";
+          setStatus(`Barcode ${trimmed} isn't in Open Food Facts. Try a name search instead.`);
+        }
+      } catch (err) {
+        if (mySeq !== requestSeq) return;
+        console.error(err);
+        setStatus("Couldn't reach Open Food Facts. Check your connection and try again.");
+      }
+      return;
+    }
+
     setStatus("Searching…");
     const ctrl = new AbortController();
     inflight = ctrl;
-    const mySeq = ++requestSeq;
     try {
-      const hits = await searchFoods(q, ctrl.signal);
+      const hits = await searchFoods(trimmed, ctrl.signal);
       if (mySeq !== requestSeq) return;
       latestHits = hits;
       renderResults(results, hits);
@@ -124,37 +153,6 @@ export function mountFoodSearchPanel(container: HTMLElement, opts: PanelOptions)
 
   manual?.addEventListener("click", () => opts.onPick(null));
   cancel.addEventListener("click", () => opts.onCancel?.());
-
-  codeBtn.addEventListener("click", async () => {
-    const code = window.prompt("Enter the product barcode (EAN-13, EAN-8, UPC-A, UPC-E):");
-    if (code === null) return;
-    const trimmed = code.trim();
-    if (!trimmed) return;
-    if (!/^\d{6,14}$/.test(trimmed)) {
-      setStatus("Barcodes are 6–14 digits — please re-enter.");
-      return;
-    }
-    setStatus(`Looking up barcode ${trimmed}…`);
-    codeBtn.disabled = true;
-    // Bump the seq so any in-flight text-search response is ignored
-    // and can't paint over the barcode result below.
-    const mySeq = ++requestSeq;
-    try {
-      const hit = await lookupBarcode(trimmed);
-      if (mySeq !== requestSeq) return;
-      if (hit) {
-        opts.onPick(hit);
-      } else {
-        setStatus(`Barcode ${trimmed} isn't in Open Food Facts. Try a text search or add manually.`);
-      }
-    } catch (err) {
-      if (mySeq !== requestSeq) return;
-      console.error(err);
-      setStatus("Couldn't reach Open Food Facts. Check your connection and try again.");
-    } finally {
-      codeBtn.disabled = false;
-    }
-  });
 
   scanBtn.addEventListener("click", async () => {
     // The ZXing-based scanner is ~140 KB gzipped — load it on demand so
