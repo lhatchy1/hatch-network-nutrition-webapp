@@ -71,15 +71,18 @@ export async function lookupMigrosProduct(
   const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    // Send as a "simple" CORS request — no Content-Type / Accept
-    // headers — so the browser doesn't fire an OPTIONS preflight.
-    // corsproxy.io's free tier rejects preflights with HTTP 403 from
-    // non-localhost origins, but lets simple POSTs straight through.
-    // The body still serialises as text/plain;charset=UTF-8 (a
-    // CORS-safe default), and Migros' product-display endpoint
-    // doesn't require application/json when the body is empty.
+    // Force this to be a "simple" CORS POST so the browser never sends
+    // an OPTIONS preflight — corsproxy.io's free tier 403s preflights
+    // from non-localhost origins. The only CORS-safelisted values for
+    // Content-Type are application/x-www-form-urlencoded,
+    // multipart/form-data, and text/plain (no parameters). We pick
+    // bare "text/plain" because some browsers (Firefox) preflight when
+    // the auto-set default tacks ";charset=UTF-8" on. Migros' product
+    // -display endpoint doesn't read the body, so the content-type
+    // doesn't matter at the server.
     const res = await fetch(proxied, {
       method: "POST",
+      headers: { "Content-Type": "text/plain" },
       body: "{}",
       signal: ctrl.signal,
     });
