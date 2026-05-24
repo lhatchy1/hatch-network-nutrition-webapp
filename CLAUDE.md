@@ -44,6 +44,16 @@ src/state.ts                 src/store.ts
                                           │
 src/nutrition.ts  src/shopping.ts         ▼
   pure functions over AppState        getStore() in views
+
+                  ┌──────────────────────────────────────────┐
+Add-ingredient ──▶│ src/ui/foodSearchPanel.ts                │
+flows in both     │   text search (debounced) + Scan button  │
+ingredients.ts ──▶│   ↓                          ↓           │
+and meals.ts      │   src/api/foodSearch.ts      src/ui/     │
+                  │   (OFF: search + lookup)     barcodeScanner.ts
+                  │                              (lazy-loaded,
+                  │                               @zxing/browser)
+                  └──────────────────────────────────────────┘
 ```
 
 Views mutate the store directly (e.g. `store.ingredients.push(...)`).
@@ -66,6 +76,32 @@ in `src/ui/components.ts`, which escapes interpolations by default.
 - **Bundled docs via `?raw`.** `IMPORT.md` is imported by
   `views/settings.ts` as `?raw` so the in-app copy stays in lockstep
   with the repo doc — don't duplicate it as a TS constant.
+
+## Nutrition data (Open Food Facts)
+
+Ingredients can be added in three ways, ordered by speed-to-value:
+
+1. **Barcode scan** — opens the device camera, decodes an EAN-13 / EAN-8
+   / UPC-A / UPC-E barcode via `@zxing/browser`, then hits OFF's
+   `/api/v2/product/<barcode>.json`. Best for packaged products.
+2. **Text search** — debounced query against OFF's legacy free-text
+   endpoint `/cgi/search.pl?search_terms=…&search_simple=1&action=process&json=1`.
+   The newer `/api/v2/search` is facet-based and silently ignores
+   `search_terms` — don't switch to it. `lc=en` is sent to prefer
+   English names where the entry has them, but we **don't filter
+   non-English hits out** — the user is the better filter, and a
+   hard language filter risks hiding the right product.
+3. **Manual entry** — preserved fallback for raw / unbranded items.
+
+Both surfaces (Ingredients view, Meal editor) mount the same
+`mountFoodSearchPanel` component. In the meal editor, picking a hit
+creates a new library ingredient *and* attaches it to the meal at
+100 g in one step.
+
+The OFF→FoodHit mapping (`productToHit` in `src/api/foodSearch.ts`)
+drops products without usable `energy-kcal_100g` (those are useless
+for a nutrition planner) and best-effort-maps the OFF `categories_tags`
+into our six ingredient categories via `guessCategory`.
 
 ## Common changes
 
@@ -97,8 +133,17 @@ Actions** set once before the first deploy can publish.
 - **Barcode scanner is lazy-loaded.** `src/ui/barcodeScanner.ts` pulls in
   `@zxing/browser` (~114 KB gzipped). Import it via `await import("./barcodeScanner")`
   inside the click handler so the initial bundle stays slim — never
-  static-import it from anything the app loads on boot. Camera access
-  requires `getUserMedia`, which on iOS only works on HTTPS origins.
+  static-import it from anything the app loads on boot.
+- **Camera needs a secure context.** iOS Safari hides
+  `navigator.mediaDevices` entirely on plain HTTP, so the scanner checks
+  `window.isSecureContext` first and surfaces an explicit "needs HTTPS"
+  message before falling through to the no-camera-support path. There's
+  also an inline `<script>` at the top of `index.html` that bounces
+  `http://` → `https://` before any other code runs — leave that in.
+- **OFF API endpoint choice matters.** Use `/cgi/search.pl` for text
+  search (it does free-text matching). Don't switch to `/api/v2/search`
+  — that endpoint is facet-based and silently drops `search_terms`,
+  which makes every query return the same popular products.
 - **Custom domain.** The site is served at `https://food.hatchnetwork.ch/`
   via a DNS `CNAME` pointing the `food` subdomain at `lhatchy1.github.io`.
   `public/CNAME` ships in the Pages artifact to persist the
@@ -151,5 +196,9 @@ Actions** set once before the first deploy can publish.
 | Anything maths-related | `src/nutrition.ts`, `src/shopping.ts` |
 | State / persistence | `src/state.ts`, `src/store.ts` |
 | Routing / startup | `src/main.ts` |
-| PWA shell | `public/manifest.webmanifest`, `public/sw.js` |
+| Open Food Facts integration | `src/api/foodSearch.ts` (search + barcode lookup) |
+| Food-search UI (shared) | `src/ui/foodSearchPanel.ts` |
+| Barcode camera scanner | `src/ui/barcodeScanner.ts` (lazy-loaded) |
+| PWA shell + custom domain | `public/manifest.webmanifest`, `public/sw.js`, `public/CNAME` |
+| HTTPS bounce / app shell | `index.html` |
 | CI / deploy | `.github/workflows/deploy.yml` |

@@ -5,6 +5,11 @@ meals, plan a week (bridge / lunch / dinner per day), see live nutrition
 totals against your targets, and auto-generate a shopping list. Fully
 client-side, persists to `localStorage`, installable as a PWA.
 
+Ingredients can be added by **scanning a barcode** with the device
+camera, by **searching the Open Food Facts database** by name, or by
+typing macros in manually. No API key required — OFF is hit directly
+from the browser.
+
 Live: `https://food.hatchnetwork.ch/`
 
 ## Docs
