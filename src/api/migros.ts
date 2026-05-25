@@ -17,7 +17,12 @@ import type { IngredientCategory, Unit } from "../types";
 import type { FoodHit } from "./foodSearch";
 
 const PRODUCT_ENDPOINT = "https://www.migros.ch/product-display/public/v1/products/mgb";
-const CORS_PROXY = "https://corsproxy.io/?url=";
+// Production override via VITE_MIGROS_PROXY (typically a Cloudflare
+// Worker — see infra/migros-cors-worker.js). Falls back to corsproxy.io
+// so local dev still works without any setup, with the caveat that
+// corsproxy.io's free tier 403s preflighted POSTs from public origins.
+const env = import.meta.env as Record<string, string | undefined>;
+const CORS_PROXY = env.VITE_MIGROS_PROXY || "https://corsproxy.io/?url=";
 const REQUEST_TIMEOUT_MS = 12_000;
 
 interface MigrosNutrientRow {
@@ -71,18 +76,12 @@ export async function lookupMigrosProduct(
   const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    // Force this to be a "simple" CORS POST so the browser never sends
-    // an OPTIONS preflight — corsproxy.io's free tier 403s preflights
-    // from non-localhost origins. The only CORS-safelisted values for
-    // Content-Type are application/x-www-form-urlencoded,
-    // multipart/form-data, and text/plain (no parameters). We pick
-    // bare "text/plain" because some browsers (Firefox) preflight when
-    // the auto-set default tacks ";charset=UTF-8" on. Migros' product
-    // -display endpoint doesn't read the body, so the content-type
-    // doesn't matter at the server.
+    // The Cloudflare Worker proxy (see infra/migros-cors-worker.js)
+    // explicitly allows the Content-Type header on its preflight
+    // response, so this matches what the Migros SPA itself sends.
     const res = await fetch(proxied, {
       method: "POST",
-      headers: { "Content-Type": "text/plain" },
+      headers: { "Content-Type": "application/json" },
       body: "{}",
       signal: ctrl.signal,
     });

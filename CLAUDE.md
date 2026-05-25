@@ -347,17 +347,21 @@ bundle.
   which makes every query return the same popular products.
 - **Migros needs a CORS proxy.** `src/api/migros.ts` calls
   `https://www.migros.ch/product-display/public/v1/products/mgb/<id>`
-  through `https://corsproxy.io/?url=…` because Migros doesn't send
+  through a proxy because Migros doesn't send
   `Access-Control-Allow-Origin` and the product page itself is an
   Angular SPA (HTML scraping returns an empty `<app-root>` shell). The
-  endpoint is also geo-restricted to Swiss IPs — calls from elsewhere
-  return `HTTP 403 host_not_allowed`, so you can't smoke-test it from
-  a CI runner outside Switzerland; verify in a local browser. If
-  `corsproxy.io` ever flakes for real users, swap the `CORS_PROXY`
-  constant for a self-hosted Cloudflare Worker (the request is a plain
-  `POST` with body `"{}"` — any pass-through reflector works). The
-  request **must** be `POST` even though it reads — that's what the
-  Migros SPA itself sends.
+  production proxy is a Cloudflare Worker — source lives in
+  `infra/migros-cors-worker.js`, setup steps in `infra/README.md`, and
+  its URL is read from `VITE_MIGROS_PROXY` (in `.env` for local dev and
+  in repo secrets for the Pages build). If `VITE_MIGROS_PROXY` is
+  blank the app falls back to `https://corsproxy.io/?url=…`, which is
+  fine on localhost but 403s preflighted POSTs from public origins
+  (their free tier blocks the OPTIONS request) — don't rely on it in
+  production. The Migros endpoint is also geo-restricted to Swiss
+  IPs — calls from elsewhere return `HTTP 403 host_not_allowed`, so
+  you can't smoke-test it from a CI runner outside Switzerland; verify
+  in a local browser. The request **must** be `POST` even though it
+  reads — that's what the Migros SPA itself sends.
 - **Custom domain.** The site is served at `https://food.hatchnetwork.ch/`
   via a DNS `CNAME` pointing the `food` subdomain at `lhatchy1.github.io`.
   `public/CNAME` ships in the Pages artifact to persist the
@@ -559,7 +563,8 @@ re-reading the conversation history.
 | Sharing UI | `src/views/share.ts` |
 | Routing / startup / nav rendering / mtop context | `src/main.ts` |
 | Open Food Facts integration | `src/api/foodSearch.ts` (search + barcode lookup) |
-| Migros product URL integration | `src/api/migros.ts` (paste-URL → FoodHit via corsproxy.io) |
+| Migros product URL integration | `src/api/migros.ts` (paste-URL → FoodHit via the Cloudflare Worker proxy in `infra/`) |
+| Migros CORS proxy (Cloudflare Worker) | `infra/migros-cors-worker.js` + `infra/README.md` (deploy steps) |
 | Food-search UI (shared) | `src/ui/foodSearchPanel.ts` |
 | Meal picker dialog | `src/ui/mealPicker.ts` |
 | Replace-ingredient dialog | `src/ui/replaceDialog.ts` (wired from Shopping) |
