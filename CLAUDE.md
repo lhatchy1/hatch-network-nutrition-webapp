@@ -368,6 +368,21 @@ bundle.
   you can't smoke-test it from a CI runner outside Switzerland; verify
   in a local browser. The request **must** be `POST` even though it
   reads — that's what the Migros SPA itself sends.
+- **The Migros worker has to spoof a browser User-Agent.** Cloudflare
+  Workers' default outbound `User-Agent` is `Cloudflare-Workers`,
+  which Migros' bot protection answers with HTTP 403 + an HTML block
+  page (looks exactly like a CORS or geo failure from the browser
+  side, but the body is a Cloudflare challenge HTML, not the
+  `host_not_allowed` JSON). `infra/migros-cors-worker.js` sets a real
+  Chrome UA plus `Origin: https://www.migros.ch` and a `Referer`
+  matching the product page so the upstream request looks like the
+  SPA's own. Don't strip those headers thinking they're cargo-culted
+  — the worker silently starts failing again. Same file also avoids
+  `Cache-Control: public, max-age=300` on non-2xx; without that guard
+  a single transient 403 sticks in browser + edge caches for five
+  minutes and every retry hits the cached failure. Worker edits also
+  don't auto-deploy — paste the file into the Cloudflare dashboard
+  editor after each change (see `infra/README.md`).
 - **Custom domain.** The site is served at `https://food.hatchnetwork.ch/`
   via a DNS `CNAME` pointing the `food` subdomain at `lhatchy1.github.io`.
   `public/CNAME` ships in the Pages artifact to persist the
