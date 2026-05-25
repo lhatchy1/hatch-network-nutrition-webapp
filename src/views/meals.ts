@@ -1,7 +1,7 @@
 import { getStore } from "../store";
 import { uid } from "../state";
 import type { Ingredient, Meal } from "../types";
-import { mealNutrition, fmtMacro } from "../nutrition";
+import { mealNutrition, fmtMacro, fmtSalt } from "../nutrition";
 import { esc, html, raw, confirmAction } from "../ui/components";
 import { mountFoodSearchPanel } from "../ui/foodSearchPanel";
 import { shareMeal, isSignedIn } from "../firebase/sharing";
@@ -111,6 +111,11 @@ function renderDetail(m: Meal): string {
       <div class="macro-tile"><div class="v">${fmtMacro(n.protein)}g</div><div class="k">protein</div></div>
       <div class="macro-tile"><div class="v">${fmtMacro(n.carbs)}g</div><div class="k">carbs</div></div>
       <div class="macro-tile"><div class="v">${fmtMacro(n.fat)}g</div><div class="k">fat</div></div>
+    </div>
+    <div class="macro-tiles secondary">
+      <div class="macro-tile"><div class="v">${fmtMacro(n.fibre)}g</div><div class="k">fibre</div></div>
+      <div class="macro-tile"><div class="v">${fmtMacro(n.sugar)}g</div><div class="k">sugar</div></div>
+      <div class="macro-tile"><div class="v">${fmtSalt(n.salt)}g</div><div class="k">salt</div></div>
     </div>
 
     <div style="font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-2); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px;">Ingredients</div>
@@ -328,6 +333,11 @@ function renderEdit(target: HTMLElement): void {
         <div class="macro-tile"><div class="v">${fmtMacro(n.carbs)}g</div><div class="k">carbs</div></div>
         <div class="macro-tile"><div class="v">${fmtMacro(n.fat)}g</div><div class="k">fat</div></div>
       </div>
+      <div class="macro-tiles secondary">
+        <div class="macro-tile"><div class="v">${fmtMacro(n.fibre)}g</div><div class="k">fibre</div></div>
+        <div class="macro-tile"><div class="v">${fmtMacro(n.sugar)}g</div><div class="k">sugar</div></div>
+        <div class="macro-tile"><div class="v">${fmtSalt(n.salt)}g</div><div class="k">salt</div></div>
+      </div>
     </article>
   `;
 
@@ -355,6 +365,9 @@ function mountMealSearch(target: HTMLElement, meal: Meal): void {
         proteinPer100: hit.proteinPer100,
         carbsPer100: hit.carbsPer100,
         fatPer100: hit.fatPer100,
+        fibrePer100: hit.fibrePer100,
+        sugarPer100: hit.sugarPer100,
+        saltPer100: hit.saltPer100,
         category: hit.category,
       };
       store.ingredients.push(ing);

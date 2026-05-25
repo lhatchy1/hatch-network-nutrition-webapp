@@ -101,6 +101,9 @@ export function renderIngredients(target: HTMLElement): void {
             proteinPer100: hit.proteinPer100,
             carbsPer100: hit.carbsPer100,
             fatPer100: hit.fatPer100,
+            fibrePer100: hit.fibrePer100,
+            sugarPer100: hit.sugarPer100,
+            saltPer100: hit.saltPer100,
             category: hit.category,
           };
           store.ingredients.push(fresh);
@@ -116,6 +119,9 @@ export function renderIngredients(target: HTMLElement): void {
             proteinPer100: 0,
             carbsPer100: 0,
             fatPer100: 0,
+            fibrePer100: 0,
+            sugarPer100: 0,
+            saltPer100: 0,
             category: "Other",
           };
           store.ingredients.push(fresh);
@@ -139,10 +145,17 @@ function renderRowOrEdit(r: Ingredient): string {
 function renderRow(r: Ingredient): string {
   const perLabel = r.unit === "unit" ? "/unit" : "/100" + r.unit;
   const catSlug = r.category.toLowerCase();
+  const fibre = r.fibrePer100 ?? 0;
+  const sugar = r.sugarPer100 ?? 0;
+  const salt = r.saltPer100 ?? 0;
+  const extras =
+    fibre || sugar || salt
+      ? ` · ${fmt(fibre)}fib · ${fmt(sugar)}sug · ${fmt(salt)}salt`
+      : "";
   return `<div class="ingr-row" data-row="${esc(r.id)}">
     <div>
       <div class="nm">${esc(r.name)}</div>
-      <div class="meta">${fmt(r.kcalPer100)} kcal · ${fmt(r.proteinPer100)}P · ${fmt(r.carbsPer100)}C · ${fmt(r.fatPer100)}F ${esc(perLabel)}</div>
+      <div class="meta">${fmt(r.kcalPer100)} kcal · ${fmt(r.proteinPer100)}P · ${fmt(r.carbsPer100)}C · ${fmt(r.fatPer100)}F${esc(extras)} ${esc(perLabel)}</div>
     </div>
     <div class="right">
       <span class="cat-tag ${esc(catSlug)}">${esc(r.category)}</span>
@@ -173,6 +186,9 @@ function renderEditCard(r: Ingredient): string {
       <label>Protein g <input name="protein" type="number" step="any" value="${r.proteinPer100}" /></label>
       <label>Carbs g <input name="carbs" type="number" step="any" value="${r.carbsPer100}" /></label>
       <label>Fat g <input name="fat" type="number" step="any" value="${r.fatPer100}" /></label>
+      <label>Fibre g <input name="fibre" type="number" step="any" value="${r.fibrePer100 ?? 0}" /></label>
+      <label>Sugar g <input name="sugar" type="number" step="any" value="${r.sugarPer100 ?? 0}" /></label>
+      <label>Salt g <input name="salt" type="number" step="any" value="${r.saltPer100 ?? 0}" /></label>
     </div>
     <div class="actions">
       <button class="btn primary" data-save="${esc(r.id)}">Save</button>
@@ -280,6 +296,9 @@ function wire(root: HTMLElement): void {
       ing.proteinPer100 = Number(get("protein")) || 0;
       ing.carbsPer100 = Number(get("carbs")) || 0;
       ing.fatPer100 = Number(get("fat")) || 0;
+      ing.fibrePer100 = Number(get("fibre")) || 0;
+      ing.sugarPer100 = Number(get("sugar")) || 0;
+      ing.saltPer100 = Number(get("salt")) || 0;
       ing.category = get("category") as IngredientCategory;
       view.editingId = null;
       renderIngredients(root);

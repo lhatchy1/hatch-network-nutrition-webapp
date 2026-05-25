@@ -4,13 +4,26 @@
 //   protein  under-only  (overshooting is fine)
 //   carbs    symmetric ±15%
 //   fat      over-only   (undershooting is fine)
+//   fibre    under-only  (more is better)
+//   sugar    over-only   (less is better)
+//   salt     over-only   (less is better)
 //
 // Status keys map to .v-under / .v-near / .v-over classes via setStatusClass.
 
 import type { IngredientCategory, Ingredient, Meal } from "./types";
 
 export type StatusKey = "under" | "near" | "over";
-export type MacroKey = "kcal" | "p" | "protein" | "c" | "carbs" | "f" | "fat";
+export type MacroKey =
+  | "kcal"
+  | "p"
+  | "protein"
+  | "c"
+  | "carbs"
+  | "f"
+  | "fat"
+  | "fibre"
+  | "sugar"
+  | "salt";
 
 export function status(macro: MacroKey, value: number, target: number): StatusKey {
   if (!target) return "near";
@@ -30,6 +43,11 @@ export function status(macro: MacroKey, value: number, target: number): StatusKe
       return "near";
     case "f":
     case "fat":
+      return r > 1.10 ? "over" : "near";
+    case "fibre":
+      return r < 0.95 ? "under" : "near";
+    case "sugar":
+    case "salt":
       return r > 1.10 ? "over" : "near";
   }
   return "near";

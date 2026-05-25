@@ -1,11 +1,12 @@
 import type { AppState, Ingredient, Meal, MealSlot, ThemePref, WeekPlan } from "./types";
 import { DAYS, DEFAULT_SLOTS } from "./types";
 
-// v3 widened `targets` from {kcal, protein} to all four macros and added the
-// `theme` preference. The normalise() function below back-fills both for any
-// older save it reads — kept indefinitely, no hard cut-over.
-const STORAGE_KEY = "mealprep:v3";
-const LEGACY_STORAGE_KEYS = ["mealprep:v2", "mealprep:v1"];
+// v4 added per-ingredient fibre / sugar / salt and matching targets. v3
+// widened `targets` from {kcal, protein} to all four macros and added the
+// `theme` preference. The normalise() function below back-fills missing
+// nutrient fields and targets for any older save it reads.
+const STORAGE_KEY = "mealprep:v4";
+const LEGACY_STORAGE_KEYS = ["mealprep:v3", "mealprep:v2", "mealprep:v1"];
 const SAVE_DEBOUNCE_MS = 300;
 
 // localStorage key the app should currently read/write. Defaults to the
@@ -67,7 +68,15 @@ export function defaultState(): AppState {
     meals: [],
     slots,
     week: emptyWeek(slots),
-    targets: { kcal: 2050, protein: 140, carbs: 220, fat: 70 },
+    targets: {
+      kcal: 2050,
+      protein: 140,
+      carbs: 220,
+      fat: 70,
+      fibre: 30,
+      sugar: 50,
+      salt: 6,
+    },
     shoppingChecked: [],
     profile: { displayName: "" },
     theme: "auto",
@@ -113,7 +122,9 @@ export function normalise(input: unknown): AppState {
       ? obj.theme
       : base.theme;
   return {
-    ingredients: Array.isArray(obj.ingredients) ? obj.ingredients : base.ingredients,
+    ingredients: Array.isArray(obj.ingredients)
+      ? obj.ingredients.map(backfillIngredient)
+      : base.ingredients,
     meals: Array.isArray(obj.meals) ? obj.meals.map(stripLegacyMealFields) : base.meals,
     slots,
     week: obj.week && typeof obj.week === "object"
@@ -142,6 +153,23 @@ function stripLegacyMealFields(m: unknown): AppState["meals"][number] {
     tags?: unknown;
   };
   return rest as unknown as AppState["meals"][number];
+}
+
+// Pre-v4 ingredients had no fibre/sugar/salt. Default to 0 so aggregations
+// stay numeric — the user can refill the real values later.
+function backfillIngredient(i: unknown): Ingredient {
+  const ing = (i ?? {}) as Partial<Ingredient> & Record<string, unknown>;
+  return {
+    ...(ing as Ingredient),
+    fibrePer100: numericField(ing.fibrePer100),
+    sugarPer100: numericField(ing.sugarPer100),
+    saltPer100: numericField(ing.saltPer100),
+  };
+}
+
+function numericField(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
 // Keep slot keys that exist in the slots list; drop keys that don't.
@@ -248,7 +276,7 @@ export function mergeImport(
   for (const ing of payload.ingredients) {
     const id = uid();
     idMap.set(ing.id, id);
-    newIngredients.push({ ...ing, id });
+    newIngredients.push({ ...backfillIngredient(ing), id });
   }
   const newMeals: Meal[] = [];
   for (const m of payload.meals) {

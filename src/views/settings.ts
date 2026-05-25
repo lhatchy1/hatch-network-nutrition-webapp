@@ -60,6 +60,9 @@ function render(dialog: HTMLDialogElement, onChange: () => void): void {
           ${raw(macroTile("protein", "P", store.targets.protein, "g"))}
           ${raw(macroTile("carbs", "C", store.targets.carbs, "g"))}
           ${raw(macroTile("fat", "F", store.targets.fat, "g"))}
+          ${raw(macroTile("fibre", "fibre", store.targets.fibre, "g"))}
+          ${raw(macroTile("sugar", "sugar", store.targets.sugar, "g"))}
+          ${raw(macroTile("salt", "salt", store.targets.salt, "g"))}
         </div>
       </section>
 

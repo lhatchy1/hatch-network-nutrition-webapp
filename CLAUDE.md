@@ -34,9 +34,9 @@ turned off. Firestore is in production mode with rules from
 | CSS | Pico **classless** (forms + `<dialog>` only) + custom Greenhouse layer in `src/ui/styles.css` | Pico handles native form/dialog defaults; everything else (layout, nav, week grid, status colours, dialogs) is hand-rolled against design tokens. See "Design direction" below. |
 | Design tokens | CSS custom properties at the top of `src/ui/styles.css` (`--bg`, `--ink`, `--accent`, `--cat-*`, `--status-*`, …) | Single source of truth for the warm sage/terracotta "Greenhouse" palette; theme switching swaps the same names in `[data-theme="dark"]`. |
 | Fonts | Geist (display + body) + DM Mono (numerals / labels) via Google Fonts | Brief locks these two faces; nothing else. `font-variant-numeric: tabular-nums` is set on `body`. |
-| Persistence | `localStorage` key `mealprep:v3[:uid]` | Single-blob, debounced 300 ms; namespaced per user once signed in. `normalise()` back-fills from v1/v2 keys on first load. |
+| Persistence | `localStorage` key `mealprep:v4[:uid]` | Single-blob, debounced 300 ms; namespaced per user once signed in. `normalise()` back-fills from v1/v2/v3 keys on first load (v3→v4 zero-fills new fibre/sugar/salt fields on every ingredient). |
 | Auth + sync | Firebase Auth (Email/Password) + Firestore | Cross-device sync; admin-provisioned accounts; offline-first via localStorage cache |
-| PWA | `public/manifest.webmanifest` + `public/sw.js` (stale-while-revalidate, versioned cache `mealprep-v4`) | Offline-capable, installable |
+| PWA | `public/manifest.webmanifest` + `public/sw.js` (stale-while-revalidate, versioned cache `mealprep-v5`) | Offline-capable, installable |
 | Routing | Hash router (`#/week`, `#/meals`, `#/ingredients`, `#/shopping`, `#/share`) | GitHub Pages has no SPA fallback; hashes never hit the server. `#/week` is the default. |
 | Hosting | GitHub Pages via Actions (`actions/deploy-pages@v4`) | No backend; main → live |
 | Bundle target | None (was 50 KB, dropped during planning) | Optimise for clarity |
@@ -50,8 +50,9 @@ bar + desktop horizontal nav, native `<dialog>` for Settings and the
 meal picker). The locked decisions to respect when changing UI:
 
 1. **Asymmetric per-macro status** — `kcal` symmetric ±5 %, `protein`
-   under-only, `carbs` symmetric ±15 %, `fat` over-only. Implemented
-   in `src/status.ts`; render via the `.v-under` / `.v-near` /
+   under-only, `carbs` symmetric ±15 %, `fat` over-only; `fibre`
+   under-only, `sugar` over-only, `salt` over-only. Implemented in
+   `src/status.ts`; render via the `.v-under` / `.v-near` /
    `.v-over` classes (never inline colours).
 2. **Category dot, not slot icon** — the small coloured circle on
    every meal row is derived from the meal's first ingredient's
@@ -233,7 +234,8 @@ distinguishes; consumers default to `"g"` otherwise.
 | New view | Add `src/views/<name>.ts`, register in `ROUTES` in `main.ts` (with a `ctx: () => …` caption for the mobile top bar), and the nav fills both `.nav .links` and `.mtabs` from that array. |
 | Tweak default meal slots | `src/types.ts` (`DEFAULT_SLOTS`). Live slots are stored in `state.slots` and editable per-user from Settings. |
 | New ingredient category | `src/types.ts` (`INGREDIENT_CATEGORIES`) — listed categories drive the shopping-list grouping order. Also update `guessCategory` in `src/api/foodSearch.ts` so Open Food Facts hits map into it, add a `--cat-<slug>` swatch + `.cat-tag.<slug>` background in `src/ui/styles.css`, and (if the slug isn't one of the brief's five) consider whether the filter pill row in `src/views/ingredients.ts` (`PILL_CATEGORIES`) should include it. |
-| Tweak per-macro status thresholds | `src/status.ts`'s `status()` switch (kcal / protein / carbs / fat each have their own band). Keep it asymmetric — the design choice is "only flag what actually matters." |
+| Tweak per-macro status thresholds | `src/status.ts`'s `status()` switch (kcal / protein / carbs / fat / fibre / sugar / salt each have their own band). Keep it asymmetric — the design choice is "only flag what actually matters." |
+| Add a tracked nutrient | Extend `Ingredient`, `Nutrition`, and `Targets` in `src/types.ts`. Add zero-fills in `defaultState()` (targets) and `backfillIngredient()` (per-100). Add aggregation lines in `mealNutrition` / `dayTotals` / `weekAverages` in `src/nutrition.ts`. Add a `MacroKey` case in `src/status.ts`. Map the field in both `src/api/foodSearch.ts` (OFF `nutriments`) and `src/api/migros.ts` (label regex, or `subNutrient()` for "of which" rows like sugar). Surface in the ingredient row/edit (`views/ingredients.ts`), meal detail + edit tiles (`views/meals.ts`), today-card extras + desktop day-totals + week averages (`views/week.ts`), Settings macro-target grid (`views/settings.ts`), share-tab meta line (`views/share.ts`), and `foodSearchPanel` hit row. Bump `STORAGE_KEY` in `state.ts` + `CACHE_VERSION` in `public/sw.js`. Update `IMPORT.md` + `spec.md`. |
 | New status colour shade | `src/ui/styles.css` `--status-{under,near,over}` (both light + dark `[data-theme="dark"]` blocks). |
 | Storage shape change | Bump key in `src/state.ts` (`STORAGE_KEY`) **and** bump `CACHE_VERSION` in `public/sw.js`. Append the old key to `LEGACY_STORAGE_KEYS` so old saves auto-migrate. Update `normalise()`. Add the field to the `void s.foo` list in `main.ts` and to `snapshot()` / `replaceState()` / `reseedStore()` in `store.ts`. If the new field belongs in the JSON-import payload too, also update `validateImport` and `mergeImport` (and `IMPORT.md`). |
 | Add a new persisted preference | Same as "Storage shape change", plus surface a control in the Settings dialog (`src/views/settings.ts`). If it affects rendering globally, write a thin helper module (see `theme.ts` for the pattern) so views don't poke the DOM directly. |
@@ -351,6 +353,20 @@ bundle.
   search (it does free-text matching). Don't switch to `/api/v2/search`
   — that endpoint is facet-based and silently drops `search_terms`,
   which makes every query return the same popular products.
+- **Salt vs sodium.** Migros labels the field "Salt" / "Salz" / "Sel"
+  / "Sale" and reports grams of NaCl directly. Open Food Facts entries
+  may only carry `sodium_100g`; `productToHit()` falls back to
+  `sodium × 2.5` (NaCl is ~40 % sodium by mass) so the in-app figure
+  stays comparable. Don't change one without checking the other —
+  switching units between sources will silently double or halve every
+  ingredient's salt content.
+- **Migros sugar lives in the "of which" sub-row.** The product-display
+  payload reports `Carbohydrate` then `of which sugars` underneath
+  (similarly `davon Zucker` / `dont sucres` / `di cui zuccheri`).
+  `nutrient()` in `src/api/migros.ts` skips every "of which" line so
+  the carbs lookup doesn't grab the wrong row; sugar therefore needs
+  the inverse helper `subNutrient()` which only matches "of which"
+  rows. Add new sub-nutrients (e.g. saturated fat) the same way.
 - **Migros needs a CORS proxy.** `src/api/migros.ts` calls
   `https://www.migros.ch/product-display/public/v1/products/mgb/<id>`
   through a proxy because Migros doesn't send

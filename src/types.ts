@@ -25,6 +25,9 @@ export interface Ingredient {
   proteinPer100: number;
   carbsPer100: number;
   fatPer100: number;
+  fibrePer100: number;
+  sugarPer100: number;
+  saltPer100: number;
   category: IngredientCategory;
 }
 
@@ -79,6 +82,9 @@ export interface Targets {
   protein: number;
   carbs: number;
   fat: number;
+  fibre: number;
+  sugar: number;
+  salt: number;
 }
 
 export interface UserProfile {
@@ -103,4 +109,7 @@ export interface Nutrition {
   protein: number;
   carbs: number;
   fat: number;
+  fibre: number;
+  sugar: number;
+  salt: number;
 }

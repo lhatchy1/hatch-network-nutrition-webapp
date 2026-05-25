@@ -159,7 +159,7 @@ function renderIngredientList(): string {
         <div class="body">
           <div class="who">${authorMeta(s)}</div>
           <div class="nm">${esc(s.ingredient.name)}</div>
-          <div class="meta">${Math.round(s.ingredient.kcalPer100)} kcal · ${Math.round(s.ingredient.proteinPer100)}P · ${Math.round(s.ingredient.carbsPer100)}C · ${Math.round(s.ingredient.fatPer100)}F per ${s.ingredient.unit === "unit" ? "unit" : "100 " + s.ingredient.unit} · ${esc(s.ingredient.category)}</div>
+          <div class="meta">${Math.round(s.ingredient.kcalPer100)} kcal · ${Math.round(s.ingredient.proteinPer100)}P · ${Math.round(s.ingredient.carbsPer100)}C · ${Math.round(s.ingredient.fatPer100)}F · ${Math.round(s.ingredient.fibrePer100 ?? 0)}fib · ${Math.round(s.ingredient.sugarPer100 ?? 0)}sug · ${Math.round(s.ingredient.saltPer100 ?? 0)}salt per ${s.ingredient.unit === "unit" ? "unit" : "100 " + s.ingredient.unit} · ${esc(s.ingredient.category)}</div>
         </div>
         <div class="actions">
           ${copyButton(id, "Copy")}
