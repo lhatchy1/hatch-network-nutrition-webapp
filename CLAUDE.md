@@ -459,6 +459,11 @@ bundle.
   Branch off `main`, open a PR, squash-merge.
 - Never push directly to `main`. Pages deploys are triggered by merges
   to `main`.
+- **Open a fresh PR for every round of follow-up commits.** Once a PR
+  is merged it stays closed — subsequent commits pushed to the same
+  branch don't reopen it and the user gets no notification, so the
+  work strands in the branch invisibly. After any merge, treat the
+  branch as if it were brand-new: next round of changes → new PR.
 
 ## Open items / not yet done
 
