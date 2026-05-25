@@ -64,3 +64,12 @@ If you ever serve the app from a different domain, edit
 `ALLOWED_ORIGINS` at the top of `migros-cors-worker.js` and redeploy
 the worker (same Edit code → Save and deploy path as the initial
 setup).
+
+## Redeploying after a worker change
+
+Any edit to `migros-cors-worker.js` only ships when you paste the new
+file into the Cloudflare dashboard's Worker editor and click **Save and
+deploy**. There's no CI hook — the repo file is the source of truth,
+not the deployment trigger. If a code change to the worker landed in
+git but Migros lookups still behave the old way, the worker is almost
+certainly still running the previous version.

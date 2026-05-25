@@ -55,20 +55,36 @@ export default {
       return new Response("Target URL not allowed", { status: 403, headers: cors });
     }
 
+    // Cloudflare Workers' default outbound User-Agent ("Cloudflare-
+    // Workers") is fingerprinted by Migros' bot protection and answered
+    // with HTTP 403 + an HTML block page. Spoof a real browser UA and
+    // send the Origin/Referer pair the Migros SPA itself would send so
+    // the upstream request matches the shape their WAF expects.
+    const productId = t.pathname.slice(ALLOWED_PATH_PREFIX.length);
     const upstream = await fetch(t.toString(), {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Origin: "https://www.migros.ch",
+        Referer: `https://www.migros.ch/en/product/${productId}`,
+      },
       body: "{}",
     });
 
+    // Only cache successful responses — otherwise a transient 403 from
+    // Migros (bot block, rate limit) sticks in browser + edge caches for
+    // five minutes and the next paste of the same URL keeps failing.
+    const cacheable = upstream.status >= 200 && upstream.status < 300;
     return new Response(upstream.body, {
       status: upstream.status,
       headers: {
         ...cors,
         "Content-Type": upstream.headers.get("Content-Type") ?? "application/json",
-        // Migros data is fairly stable; cache at the edge for a few minutes
-        // so repeat lookups of the same product don't hit migros.ch each time.
-        "Cache-Control": "public, max-age=300",
+        "Cache-Control": cacheable ? "public, max-age=300" : "no-store",
       },
     });
   },
