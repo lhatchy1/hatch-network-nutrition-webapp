@@ -57,10 +57,13 @@ export default {
 
     // Cloudflare Workers' default outbound User-Agent ("Cloudflare-
     // Workers") is fingerprinted by Migros' bot protection and answered
-    // with HTTP 403 + an HTML block page. Spoof a real browser UA and
-    // send the Origin/Referer pair the Migros SPA itself would send so
-    // the upstream request matches the shape their WAF expects.
-    const productId = t.pathname.slice(ALLOWED_PATH_PREFIX.length);
+    // with HTTP 403 + an HTML block page, so we spoof a real Chrome UA.
+    // We deliberately DON'T set Origin / Referer to www.migros.ch —
+    // doing so puts the request on the SPA's authenticated code path
+    // and Migros answers it with 401 (no session cookie / CSRF token).
+    // The previous corsproxy.io setup that worked also stripped Origin,
+    // and the endpoint itself is documented as public. An anonymous
+    // server-to-server shape gets the public JSON we actually want.
     const upstream = await fetch(t.toString(), {
       method: "POST",
       headers: {
@@ -69,8 +72,6 @@ export default {
         "Accept-Language": "en-US,en;q=0.9",
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Origin: "https://www.migros.ch",
-        Referer: `https://www.migros.ch/en/product/${productId}`,
       },
       body: "{}",
     });
