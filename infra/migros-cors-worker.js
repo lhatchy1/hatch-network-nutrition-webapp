@@ -14,6 +14,17 @@ const ALLOWED_ORIGINS = [
 
 const ALLOWED_HOST = "www.migros.ch";
 const ALLOWED_PATH_PREFIX = "/product-display/public/v1/products/mgb/";
+const GUEST_AUTH_URL =
+  "https://www.migros.ch/authentication/public/v1/api/guest?authorizationNotRequired=true";
+
+// Cloudflare Workers' default outbound User-Agent ("Cloudflare-Workers")
+// is fingerprinted by Migros' bot protection and answered with HTTP 403 +
+// an HTML block page. Spoof a real Chrome UA on every upstream call.
+const BROWSER_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept-Language": "en-US,en;q=0.9",
+};
 
 export default {
   async fetch(req) {
@@ -55,30 +66,44 @@ export default {
       return new Response("Target URL not allowed", { status: 403, headers: cors });
     }
 
-    // Cloudflare Workers' default outbound User-Agent ("Cloudflare-
-    // Workers") is fingerprinted by Migros' bot protection and answered
-    // with HTTP 403 + an HTML block page, so we spoof a real Chrome UA.
-    // We deliberately DON'T set Origin / Referer to www.migros.ch —
-    // doing so puts the request on the SPA's authenticated code path
-    // and Migros answers it with 401 (no session cookie / CSRF token).
-    // The previous corsproxy.io setup that worked also stripped Origin,
-    // and the endpoint itself is documented as public. An anonymous
-    // server-to-server shape gets the public JSON we actually want.
+    // Step 1: bootstrap a guest session. The Migros SPA does this once on
+    // load — calling /authentication/public/v1/api/guest returns a
+    // `leshopch` token in the response headers. Every subsequent call to
+    // /product-display/... gets that token attached as a request header by
+    // an Angular HTTP interceptor. Without it, the product endpoint 401s
+    // with an empty body (which is exactly the symptom we were hitting
+    // with the bare POST + "{}" body).
+    const authResp = await fetch(GUEST_AUTH_URL, {
+      method: "GET",
+      headers: { ...BROWSER_HEADERS, Accept: "application/json" },
+    });
+    const leshopch = authResp.headers.get("leshopch");
+    if (!authResp.ok || !leshopch) {
+      return new Response(
+        `Failed to obtain Migros guest auth token (${authResp.status})`,
+        { status: 502, headers: { ...cors, "Cache-Control": "no-store" } },
+      );
+    }
+
+    // Step 2: call the product endpoint with the leshopch token AND a real
+    // JSON body. The SPA sends { storeType, warehouseId } — passing "{}"
+    // also gets a 401. warehouseId 1 is the Lausanne region; for product
+    // metadata (name, brand, macros, breadcrumb) the response is the same
+    // regardless of which warehouse we ask for.
     const upstream = await fetch(t.toString(), {
       method: "POST",
       headers: {
+        ...BROWSER_HEADERS,
         "Content-Type": "application/json",
         Accept: "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        leshopch,
       },
-      body: "{}",
+      body: JSON.stringify({ storeType: "ONLINE", warehouseId: 1 }),
     });
 
-    // Only cache successful responses — otherwise a transient 403 from
-    // Migros (bot block, rate limit) sticks in browser + edge caches for
-    // five minutes and the next paste of the same URL keeps failing.
+    // Only cache successful responses — otherwise a transient 4xx sticks
+    // in browser + edge caches for five minutes and every retry hits the
+    // cached failure.
     const cacheable = upstream.status >= 200 && upstream.status < 300;
     return new Response(upstream.body, {
       status: upstream.status,

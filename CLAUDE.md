@@ -368,25 +368,29 @@ bundle.
   you can't smoke-test it from a CI runner outside Switzerland; verify
   in a local browser. The request **must** be `POST` even though it
   reads — that's what the Migros SPA itself sends.
-- **The Migros worker has to spoof a browser User-Agent — but NOT the
-  SPA's Origin / Referer.** Cloudflare Workers' default outbound
-  `User-Agent` is `Cloudflare-Workers`, which Migros' bot protection
-  answers with HTTP 403 + an HTML block page (looks exactly like a
-  CORS or geo failure from the browser side, but the body is a
-  Cloudflare challenge HTML, not the `host_not_allowed` JSON). So the
-  worker sets a real Chrome UA. The other half of the trap: if you
-  ALSO send `Origin: https://www.migros.ch` + `Referer:
-  https://www.migros.ch/en/product/<id>`, Migros routes the call onto
-  the SPA's authenticated code path and answers with HTTP 401 (no
-  session cookie / CSRF token). The endpoint is public for anonymous
-  server-to-server callers, so the worker deliberately strips Origin
-  / Referer on the upstream fetch. Don't add them back. Same file
-  also avoids `Cache-Control: public, max-age=300` on non-2xx;
-  without that guard a single transient 4xx sticks in browser + edge
-  caches for five minutes and every retry hits the cached failure.
-  Worker edits also don't auto-deploy — paste the file into the
-  Cloudflare dashboard editor after each change (see
-  `infra/README.md`).
+- **The Migros worker has to do a two-step auth dance.** The
+  product-display API is not actually anonymous: the Migros SPA
+  bootstraps a guest session by GETting
+  `/authentication/public/v1/api/guest?authorizationNotRequired=true`,
+  reads the `leshopch` token from the response headers, then attaches it
+  as a `leshopch` request header on every product call via an Angular
+  HTTP interceptor (visible in their bundled JS). It also POSTs a real
+  body — `{ "storeType": "ONLINE", "warehouseId": 1 }` — not the empty
+  `{}` we were sending. Without both, the endpoint returns 401 with an
+  empty JSON body. `infra/migros-cors-worker.js` reproduces that flow:
+  one outbound GET to grab the token, one outbound POST with the token
+  and proper body. The worker also has to spoof a real Chrome User-
+  Agent on both calls — Cloudflare Workers' default UA
+  (`Cloudflare-Workers`) gets blocked by Migros' bot protection with
+  HTTP 403 + an HTML challenge page. Don't strip the UA or the body
+  thinking they're cargo-culted, and don't add `Origin` / `Referer`
+  back (those put the request on the SPA's authenticated code path
+  that expects a session cookie we can't supply). Same file also
+  avoids `Cache-Control: public, max-age=300` on non-2xx; without that
+  guard a single transient 4xx sticks in browser + edge caches for
+  five minutes and every retry hits the cached failure. Worker edits
+  don't auto-deploy — paste the file into the Cloudflare dashboard
+  editor after each change (see `infra/README.md`).
 - **Custom domain.** The site is served at `https://food.hatchnetwork.ch/`
   via a DNS `CNAME` pointing the `food` subdomain at `lhatchy1.github.io`.
   `public/CNAME` ships in the Pages artifact to persist the
