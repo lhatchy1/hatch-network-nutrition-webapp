@@ -53,10 +53,10 @@ shopping lists, and sharing recipes / plans with other users.
   the public sharing collections
 - **Open Food Facts** for nutrition lookups (text search + barcode);
   `@zxing/browser` is lazy-loaded for the camera-based barcode scanner
-- **localStorage** as offline cache (key `mealprep:v3[:uid]`,
-  back-fills from v1/v2 on first load)
+- **localStorage** as offline cache (key `mealprep:v5[:uid]`,
+  back-fills from v1…v4 on first load)
 - **PWA**: web manifest + service worker for offline + installable;
-  cache key `mealprep-v4`
+  cache key `mealprep-v6`
 - No hard bundle-size budget — favour clarity
 
 ## Data model
@@ -79,11 +79,15 @@ interface Ingredient {
   sugarPer100: number;        // grams; subset of carbs
   saltPer100: number;         // grams (NaCl) — converted from sodium ×2.5
   category: IngredientCategory;
+  densityGPerMl?: number;     // g/ml; only for "g"/"ml" units. Optional
+                              // (defaults to 1) — used when a meal-line
+                              // measures the ingredient in the other unit.
 }
 
 interface MealIngredient {
   ingredientId: string;
-  amount: number;             // in the ingredient's unit
+  amount: number;             // in `unit` if set, else the ingredient's native unit
+  unit?: "g" | "ml";          // optional override; converted via density
 }
 
 interface Meal {
@@ -220,8 +224,8 @@ configured.)
   to create accounts either.
 - **Per-user data**: Firestore at `/users/{uid}/state/main` holds the
   whole `AppState` as a single document.
-- **Cache**: localStorage at `mealprep:v4:{uid}` for signed-in users,
-  `mealprep:v4` while signed out. The signed-out scope migrates into
+- **Cache**: localStorage at `mealprep:v5:{uid}` for signed-in users,
+  `mealprep:v5` while signed out. The signed-out scope migrates into
   the per-uid scope on first sign-in (with a reconcile prompt if the
   cloud has different data). Older `v1` / `v2` / `v3` keys are
   auto-migrated on first read (v3 → v4 back-fills missing per-100

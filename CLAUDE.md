@@ -34,9 +34,9 @@ turned off. Firestore is in production mode with rules from
 | CSS | Pico **classless** (forms + `<dialog>` only) + custom Greenhouse layer in `src/ui/styles.css` | Pico handles native form/dialog defaults; everything else (layout, nav, week grid, status colours, dialogs) is hand-rolled against design tokens. See "Design direction" below. |
 | Design tokens | CSS custom properties at the top of `src/ui/styles.css` (`--bg`, `--ink`, `--accent`, `--cat-*`, `--status-*`, …) | Single source of truth for the warm sage/terracotta "Greenhouse" palette; theme switching swaps the same names in `[data-theme="dark"]`. |
 | Fonts | Geist (display + body) + DM Mono (numerals / labels) via Google Fonts | Brief locks these two faces; nothing else. `font-variant-numeric: tabular-nums` is set on `body`. |
-| Persistence | `localStorage` key `mealprep:v4[:uid]` | Single-blob, debounced 300 ms; namespaced per user once signed in. `normalise()` back-fills from v1/v2/v3 keys on first load (v3→v4 zero-fills new fibre/sugar/salt fields on every ingredient). |
+| Persistence | `localStorage` key `mealprep:v5[:uid]` | Single-blob, debounced 300 ms; namespaced per user once signed in. `normalise()` back-fills from v1…v4 keys on first load (v3→v4 zero-fills new fibre/sugar/salt fields; v4→v5 defaults `densityGPerMl` to 1 on every ingredient). |
 | Auth + sync | Firebase Auth (Email/Password) + Firestore | Cross-device sync; admin-provisioned accounts; offline-first via localStorage cache |
-| PWA | `public/manifest.webmanifest` + `public/sw.js` (stale-while-revalidate, versioned cache `mealprep-v5`) | Offline-capable, installable |
+| PWA | `public/manifest.webmanifest` + `public/sw.js` (stale-while-revalidate, versioned cache `mealprep-v6`) | Offline-capable, installable |
 | Routing | Hash router (`#/week`, `#/meals`, `#/ingredients`, `#/shopping`, `#/share`) | GitHub Pages has no SPA fallback; hashes never hit the server. `#/week` is the default. |
 | Hosting | GitHub Pages via Actions (`actions/deploy-pages@v4`) | No backend; main → live |
 | Bundle target | None (was 50 KB, dropped during planning) | Optimise for clarity |
@@ -322,6 +322,14 @@ bundle.
 
 ## Gotchas
 
+- **`MealIngredient.amount` is in `mi.unit ?? ing.unit`, not always `ing.unit`.**
+  v5 added an optional per-line unit override so a meal can record
+  "200 ml of olive oil" against a `g`-based ingredient (or vice versa).
+  Nutrition and shopping aggregation funnel everything through
+  `consumedNativeAmount(ing, mi)` in `src/nutrition.ts`, which applies
+  the ingredient's `densityGPerMl` (default 1 = water) when the units
+  differ. Any new code that reads `mi.amount` directly to compute
+  totals or sum a shopping line is wrong — go through the helper.
 - **"Failed to read remote state … client is offline" is benign on
   first sign-in.** Firestore's first `getDoc()` can resolve before the
   WebSocket-style transport is up; we catch it and fall through to

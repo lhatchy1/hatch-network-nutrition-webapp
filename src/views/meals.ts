@@ -1,7 +1,7 @@
 import { getStore } from "../store";
 import { uid } from "../state";
 import type { Ingredient, Meal } from "../types";
-import { mealNutrition, fmtMacro, fmtSalt } from "../nutrition";
+import { mealNutrition, fmtMacro, fmtSalt, consumedNativeAmount } from "../nutrition";
 import { esc, html, raw, confirmAction } from "../ui/components";
 import { mountFoodSearchPanel } from "../ui/foodSearchPanel";
 import { shareMeal, isSignedIn } from "../firebase/sharing";
@@ -128,11 +128,15 @@ function renderDetail(m: Meal): string {
               if (!ing) {
                 return `<div class="ing-line"><div class="nm muted">(deleted ingredient)</div><div class="amt">${mi.amount}</div></div>`;
               }
-              const f = ing.unit === "unit" ? mi.amount : mi.amount / 100;
+              const displayUnit = ing.unit === "unit" ? "" : " " + (mi.unit ?? ing.unit);
+              const f =
+                ing.unit === "unit"
+                  ? mi.amount
+                  : consumedNativeAmount(ing, mi) / 100;
               const kc = Math.round(ing.kcalPer100 * f);
               return `<div class="ing-line">
                 <div class="nm">${esc(ing.name)}</div>
-                <div class="amt">${mi.amount}${ing.unit === "unit" ? "" : " " + ing.unit}</div>
+                <div class="amt">${mi.amount}${displayUnit}</div>
                 <div class="kc">${kc} kcal</div>
               </div>`;
             })
@@ -302,10 +306,20 @@ function renderEdit(target: HTMLElement): void {
           : meal.ingredients
               .map((mi, idx) => {
                 const ing = store.ingredients.find((i) => i.id === mi.ingredientId);
+                const native = ing?.unit ?? "";
+                const effective = ing && (ing.unit === "g" || ing.unit === "ml")
+                  ? (mi.unit ?? ing.unit)
+                  : native;
+                // g/ml ingredients get a toggleable unit chip; "unit"
+                // ingredients keep the plain label.
+                const unitCell =
+                  ing && (ing.unit === "g" || ing.unit === "ml")
+                    ? `<button class="unit-toggle" data-unit-toggle="${idx}" title="Tap to switch between g and ml — converts via density">${esc(effective)}</button>`
+                    : `<div class="amt">${esc(native)}</div>`;
                 return `<div class="ing-line">
                   <div class="nm">${esc(ing?.name ?? "(deleted)")}</div>
                   <input type="number" step="any" min="0" data-amount="${idx}" value="${mi.amount}" />
-                  <div class="amt">${esc(ing?.unit ?? "")}</div>
+                  ${unitCell}
                   <button class="rm" data-rm="${idx}" aria-label="Remove">✕</button>
                 </div>`;
               })
@@ -379,6 +393,7 @@ function mountMealSearch(target: HTMLElement, meal: Meal): void {
 }
 
 function wireEdit(target: HTMLElement, meal: Meal): void {
+  const store = getStore();
   const rerender = () => renderMeals(target);
 
   target.querySelector("#back")?.addEventListener("click", () => {
@@ -410,6 +425,20 @@ function wireEdit(target: HTMLElement, meal: Meal): void {
     el.addEventListener("click", () => {
       const idx = Number(el.dataset.rm);
       meal.ingredients.splice(idx, 1);
+      rerender();
+    });
+  });
+
+  target.querySelectorAll<HTMLElement>("[data-unit-toggle]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const idx = Number(el.dataset.unitToggle);
+      const mi = meal.ingredients[idx];
+      const ing = store.ingredients.find((i) => i.id === mi.ingredientId);
+      if (!ing || (ing.unit !== "g" && ing.unit !== "ml")) return;
+      const current = mi.unit ?? ing.unit;
+      const next = current === "g" ? "ml" : "g";
+      if (next === ing.unit) delete mi.unit;
+      else mi.unit = next;
       rerender();
     });
   });

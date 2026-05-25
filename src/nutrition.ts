@@ -3,6 +3,7 @@ import type {
   DayKey,
   Ingredient,
   Meal,
+  MealIngredient,
   Nutrition,
   SlotKey,
 } from "./types";
@@ -24,9 +25,27 @@ function ingredientLookup(ingredients: Ingredient[]): Map<string, Ingredient> {
   return map;
 }
 
+// Convert a meal-line's amount into the ingredient's native unit. For
+// `unit` ingredients (count-based) there's no conversion. For `g`/`ml`
+// ingredients the line may carry a unit override — in that case we use
+// the ingredient's density to translate. Density defaults to 1 (water-
+// equivalent) when unset or non-positive, so old saves keep working.
+export function consumedNativeAmount(ing: Ingredient, mi: MealIngredient): number {
+  if (ing.unit === "unit") return mi.amount;
+  const override = mi.unit;
+  if (!override || override === ing.unit) return mi.amount;
+  const rawDensity = ing.densityGPerMl;
+  const density = typeof rawDensity === "number" && rawDensity > 0 ? rawDensity : 1;
+  // ing.unit === "g", override === "ml": mass = volume × density.
+  if (ing.unit === "g") return mi.amount * density;
+  // ing.unit === "ml", override === "g": volume = mass ÷ density.
+  return mi.amount / density;
+}
+
 // "g" and "ml" ingredients store nutrition per 100; "unit" stores nutrition per single unit.
-function scaleFactor(ingredient: Ingredient, amount: number): number {
-  return ingredient.unit === "unit" ? amount : amount / 100;
+function scaleFactor(ing: Ingredient, mi: MealIngredient): number {
+  if (ing.unit === "unit") return mi.amount;
+  return consumedNativeAmount(ing, mi) / 100;
 }
 
 // `?? 0` on each per-100 field defends against ingredients adopted from
@@ -37,7 +56,7 @@ export function mealNutrition(meal: Meal, ingredients: Ingredient[]): Nutrition 
   for (const mi of meal.ingredients) {
     const ing = lookup.get(mi.ingredientId);
     if (!ing) continue;
-    const f = scaleFactor(ing, mi.amount);
+    const f = scaleFactor(ing, mi);
     total.kcal += (ing.kcalPer100 ?? 0) * f;
     total.protein += (ing.proteinPer100 ?? 0) * f;
     total.carbs += (ing.carbsPer100 ?? 0) * f;
