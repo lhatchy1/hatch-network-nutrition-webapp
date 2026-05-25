@@ -414,9 +414,11 @@ function wireEdit(target: HTMLElement, meal: Meal): void {
     });
   });
 
-  target.querySelector("#m-add-btn")?.addEventListener("click", () => {
-    const sel = target.querySelector("#m-add-ing") as HTMLSelectElement;
-    const amt = target.querySelector("#m-add-amt") as HTMLInputElement;
+  const addBtn = target.querySelector("#m-add-btn") as HTMLButtonElement | null;
+  const sel = target.querySelector("#m-add-ing") as HTMLSelectElement | null;
+  const amt = target.querySelector("#m-add-amt") as HTMLInputElement | null;
+  const submitAdd = () => {
+    if (!sel || !amt) return;
     const ingId = sel.value;
     const amount = Number(amt.value);
     if (!ingId || !amount || amount <= 0) return;
@@ -424,7 +426,17 @@ function wireEdit(target: HTMLElement, meal: Meal): void {
     sel.value = "";
     amt.value = "";
     rerender();
-  });
+  };
+  addBtn?.addEventListener("click", submitAdd);
+  // Mirror the settings "add slot" Enter behaviour — pressing Enter
+  // anywhere in the row submits the add instead of reloading the page.
+  const onEnter = (e: KeyboardEvent) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    submitAdd();
+  };
+  sel?.addEventListener("keydown", onEnter);
+  amt?.addEventListener("keydown", onEnter);
 
   target.querySelector("#m-search-btn")?.addEventListener("click", () => {
     view.searching = !view.searching;
