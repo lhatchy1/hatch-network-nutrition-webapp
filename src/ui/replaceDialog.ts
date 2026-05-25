@@ -73,6 +73,9 @@ function adoptIngredient(hit: FoodHit): Ingredient {
     proteinPer100: hit.proteinPer100,
     carbsPer100: hit.carbsPer100,
     fatPer100: hit.fatPer100,
+    fibrePer100: hit.fibrePer100,
+    sugarPer100: hit.sugarPer100,
+    saltPer100: hit.saltPer100,
     category: hit.category,
   };
   store.ingredients.push(fresh);

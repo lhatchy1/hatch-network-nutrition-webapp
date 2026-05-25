@@ -16,6 +16,9 @@ export interface FoodHit {
   proteinPer100: number;
   carbsPer100: number;
   fatPer100: number;
+  fibrePer100: number;
+  sugarPer100: number;
+  saltPer100: number;
   category: IngredientCategory;
   // Some sources (e.g. Migros) tell us whether the per-100 figures are
   // per 100 g or per 100 ml. OFF doesn't distinguish — leave undefined
@@ -28,6 +31,11 @@ interface OFFNutriments {
   proteins_100g?: number;
   carbohydrates_100g?: number;
   fat_100g?: number;
+  fiber_100g?: number;
+  sugars_100g?: number;
+  salt_100g?: number;
+  // OFF often only carries sodium; we'll convert when salt is missing.
+  sodium_100g?: number;
 }
 
 interface OFFProduct {
@@ -51,6 +59,9 @@ interface OFFProductResponse {
 
 const SEARCH_ENDPOINT = "https://world.openfoodfacts.org/cgi/search.pl";
 const PRODUCT_ENDPOINT = "https://world.openfoodfacts.org/api/v2/product";
+// `nutriments` already carries every numeric per-100 field OFF knows
+// about (fiber_100g, sugars_100g, salt_100g, sodium_100g …) so we don't
+// need to enumerate them individually here — they ride in for free.
 const FIELDS =
   "product_name,product_name_en,generic_name,generic_name_en,brands,categories_tags,nutriments";
 
@@ -199,6 +210,15 @@ function productToHit(p: OFFProduct): FoodHit | null {
     ""
   ).trim();
   if (!name) return null;
+  // OFF reports salt directly when known. Otherwise convert from sodium
+  // using the conventional 2.5× factor (NaCl is ~40% sodium by mass).
+  const salt =
+    typeof n.salt_100g === "number"
+      ? n.salt_100g
+      : typeof n.sodium_100g === "number"
+        ? n.sodium_100g * 2.5
+        : 0;
+
   return {
     name,
     brand: p.brands?.split(",")[0]?.trim() || undefined,
@@ -206,6 +226,9 @@ function productToHit(p: OFFProduct): FoodHit | null {
     proteinPer100: round(n.proteins_100g ?? 0),
     carbsPer100: round(n.carbohydrates_100g ?? 0),
     fatPer100: round(n.fat_100g ?? 0),
+    fibrePer100: round(n.fiber_100g ?? 0),
+    sugarPer100: round(n.sugars_100g ?? 0),
+    saltPer100: round(salt),
     category: guessCategory(p.categories_tags ?? []),
   };
 }

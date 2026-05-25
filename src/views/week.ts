@@ -1,12 +1,12 @@
 import { getStore } from "../store";
 import { DAYS } from "../types";
 import type { DayKey } from "../types";
-import { dayTotals, fmtMacro, mealNutrition, weekAverages } from "../nutrition";
+import { dayTotals, fmtMacro, fmtSalt, mealNutrition, weekAverages } from "../nutrition";
 import { emptyWeek } from "../state";
 import { esc, html, raw, confirmAction } from "../ui/components";
 import { shareWeekPlan, isSignedIn } from "../firebase/sharing";
 import { status, statusClass, mealCategory, dotClass } from "../status";
-import type { Nutrition } from "../types";
+import type { Nutrition, Targets } from "../types";
 import { openMealPicker } from "../ui/mealPicker";
 
 // Active day for the mobile single-day view. Lives outside the store on
@@ -53,6 +53,9 @@ export function renderWeek(target: HTMLElement): void {
   const avg = weekAverages(store);
   const avgKcalKey = status("kcal", avg.kcal, t.kcal);
   const avgProtKey = status("protein", avg.protein, t.protein);
+  const avgFibreKey = status("fibre", avg.fibre, t.fibre);
+  const avgSugarKey = status("sugar", avg.sugar, t.sugar);
+  const avgSaltKey = status("salt", avg.salt, t.salt);
   const monday = mondayOf(new Date());
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
@@ -71,6 +74,9 @@ export function renderWeek(target: HTMLElement): void {
             <span><b class="v-${avgProtKey}">${formatInt(avg.protein)}g</b><em>protein</em></span>
             <span><b>${formatInt(avg.carbs)}g</b><em>carbs</em></span>
             <span><b>${formatInt(avg.fat)}g</b><em>fat</em></span>
+            <span><b class="v-${avgFibreKey}">${formatInt(avg.fibre)}g</b><em>fibre</em></span>
+            <span><b class="v-${avgSugarKey}">${formatInt(avg.sugar)}g</b><em>sugar</em></span>
+            <span><b class="v-${avgSaltKey}">${fmtSalt(avg.salt)}g</b><em>salt</em></span>
           </div>
         </div>
       </div>
@@ -91,7 +97,7 @@ export function renderWeek(target: HTMLElement): void {
 
 function renderDaystrip(
   totalsByDay: Map<DayKey, Nutrition>,
-  t: { kcal: number; protein: number; carbs: number; fat: number },
+  t: Targets,
 ): string {
   const today = currentDayKey();
   const monday = mondayOf(new Date());
@@ -117,7 +123,7 @@ function renderTodayCard(
   todayLabel: string,
   filled: number,
   totals: Nutrition,
-  t: { kcal: number; protein: number; carbs: number; fat: number },
+  t: Targets,
 ): string {
   const store = getStore();
   const slots = store.slots;
@@ -127,6 +133,9 @@ function renderTodayCard(
   const protKey = status("protein", totals.protein, t.protein);
   const carbKey = status("carbs", totals.carbs, t.carbs);
   const fatKey = status("fat", totals.fat, t.fat);
+  const fibreKey = status("fibre", totals.fibre, t.fibre);
+  const sugarKey = status("sugar", totals.sugar, t.sugar);
+  const saltKey = status("salt", totals.salt, t.salt);
 
   return `<article class="today-card" id="today">
     <header class="day-h">
@@ -139,6 +148,12 @@ function renderTodayCard(
       ${ring(totals.protein, t.protein, protKey, "protein", formatInt(totals.protein) + "g")}
       ${ring(totals.carbs, t.carbs, carbKey, "carbs", formatInt(totals.carbs) + "g")}
       ${ring(totals.fat, t.fat, fatKey, "fat", formatInt(totals.fat) + "g")}
+    </div>
+
+    <div class="day-extras">
+      <div class="x"><b class="v-${fibreKey}">${fmtMacro(totals.fibre)}g</b><em>fibre / ${t.fibre}g</em></div>
+      <div class="x"><b class="v-${sugarKey}">${fmtMacro(totals.sugar)}g</b><em>sugar / ${t.sugar}g</em></div>
+      <div class="x"><b class="v-${saltKey}">${fmtSalt(totals.salt)}g</b><em>salt / ${t.salt}g</em></div>
     </div>
 
     <div class="slots">
@@ -176,7 +191,7 @@ function renderTodayCard(
 
 function renderDesktopGrid(
   totalsByDay: Map<DayKey, Nutrition>,
-  t: { kcal: number; protein: number; carbs: number; fat: number },
+  t: Targets,
 ): string {
   const store = getStore();
   const slots = store.slots;
@@ -223,6 +238,11 @@ function renderDesktopGrid(
           <span>C <b>${formatInt(totals.carbs)}</b></span>
           <span>F <b>${formatInt(totals.fat)}</b></span>
         </div>
+        <div class="macros extras">
+          <span>Fib <b class="v-${status("fibre", totals.fibre, t.fibre)}">${formatInt(totals.fibre)}</b></span>
+          <span>Sug <b class="v-${status("sugar", totals.sugar, t.sugar)}">${formatInt(totals.sugar)}</b></span>
+          <span>Salt <b class="v-${status("salt", totals.salt, t.salt)}">${fmtSalt(totals.salt)}</b></span>
+        </div>
       </div>
     </article>`;
   }).join("");
@@ -249,15 +269,15 @@ function ring(
   </div>`;
 }
 
-function worstStatus(
-  totals: Nutrition,
-  t: { kcal: number; protein: number; carbs: number; fat: number },
-): "under" | "near" | "over" {
+function worstStatus(totals: Nutrition, t: Targets): "under" | "near" | "over" {
   const keys = [
     status("kcal", totals.kcal, t.kcal),
     status("protein", totals.protein, t.protein),
     status("carbs", totals.carbs, t.carbs),
     status("fat", totals.fat, t.fat),
+    status("fibre", totals.fibre, t.fibre),
+    status("sugar", totals.sugar, t.sugar),
+    status("salt", totals.salt, t.salt),
   ];
   if (keys.includes("over")) return "over";
   if (keys.includes("under")) return "under";

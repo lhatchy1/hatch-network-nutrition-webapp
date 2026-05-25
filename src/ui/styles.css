@@ -463,6 +463,26 @@ main { padding-bottom: var(--mtabs-h); }
   font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--ink-2);
 }
+.today-card .day-extras {
+  display: flex; gap: 6px;
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--rule);
+}
+.today-card .day-extras .x {
+  flex: 1; text-align: center;
+  font-size: 11px;
+}
+.today-card .day-extras .x b {
+  font-weight: 600; font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  display: block;
+}
+.today-card .day-extras .x em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-2);
+}
 
 .slots { display: flex; flex-direction: column; }
 .slot {
@@ -570,6 +590,11 @@ main { padding-bottom: var(--mtabs-h); }
     font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-2);
   }
   .day-col .day-totals .macros b { color: var(--ink); font-weight: 500; }
+  .day-col .day-totals .macros.extras {
+    margin-top: 2px;
+    font-size: 9px;
+    color: var(--ink-3);
+  }
 }
 
 /* =====================================================================
@@ -652,6 +677,12 @@ main { padding-bottom: var(--mtabs-h); }
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
   margin-bottom: 18px;
 }
+.macro-tiles.secondary {
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: -10px;
+}
+.macro-tiles.secondary .macro-tile { padding: 8px 6px; }
+.macro-tiles.secondary .macro-tile .v { font-size: 16px; font-weight: 600; }
 
 /* Ingredient list inside the detail card */
 .ing-line {

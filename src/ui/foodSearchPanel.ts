@@ -261,6 +261,7 @@ function renderResults(target: HTMLElement, hits: FoodHit[]): void {
             </span>
             <span class="food-hit-macros muted">
               ${h.kcalPer100} kcal · ${h.proteinPer100}g P · ${h.carbsPer100}g C · ${h.fatPer100}g F
+              · ${h.fibrePer100}g fib · ${h.sugarPer100}g sug · ${h.saltPer100}g salt
               <small>per 100g</small>
             </span>
           </button>

@@ -38,6 +38,9 @@ interface Ingredient {
   proteinPer100: number;  // per 1 item for "unit" ingredients
   carbsPer100: number;    // (despite the field name)
   fatPer100: number;      // grams of each macro
+  fibrePer100: number;    // grams; optional in older files (back-fills to 0)
+  sugarPer100: number;    // grams; subset of carbohydrate
+  saltPer100: number;     // grams; not sodium — multiply sodium by 2.5
   category: IngredientCategory;
 }
 
@@ -70,6 +73,10 @@ interface ImportPayload {
   assigns fresh ids.
 - Macros are **per 100** for `g`/`ml` ingredients, **per single item**
   for `unit` ingredients (e.g. an egg or a slice of bread).
+- `fibrePer100`, `sugarPer100`, `saltPer100` are optional in files
+  produced before v4. Missing fields back-fill to `0` on import, so old
+  exports still load — but the four-macro view will be the only useful
+  signal until you refill the values.
 
 ## Minimal valid example
 
@@ -78,10 +85,14 @@ interface ImportPayload {
   "ingredients": [
     { "id": "ing-chicken", "name": "Chicken thigh, raw",
       "unit": "g", "kcalPer100": 209, "proteinPer100": 17,
-      "carbsPer100": 0, "fatPer100": 15, "category": "Protein" },
+      "carbsPer100": 0, "fatPer100": 15,
+      "fibrePer100": 0, "sugarPer100": 0, "saltPer100": 0.2,
+      "category": "Protein" },
     { "id": "ing-rice", "name": "Basmati rice, dry",
       "unit": "g", "kcalPer100": 360, "proteinPer100": 8,
-      "carbsPer100": 78, "fatPer100": 1, "category": "Carbs" }
+      "carbsPer100": 78, "fatPer100": 1,
+      "fibrePer100": 1.4, "sugarPer100": 0.1, "saltPer100": 0,
+      "category": "Carbs" }
   ],
   "meals": [
     { "id": "meal-chicken-rice", "name": "Chicken & rice",
@@ -117,5 +128,5 @@ match-by-name against your existing library.
   profile), but the importer only reads the `ingredients` and `meals`
   arrays. Use export for backups; use import for seeding new content.
 - Exported filename: `mealprep-YYYY-MM-DD.json`.
-- `localStorage` key: `mealprep:v3` (or `mealprep:v3:{uid}` when
-  signed in). Older `v1` / `v2` keys auto-migrate on first load.
+- `localStorage` key: `mealprep:v4` (or `mealprep:v4:{uid}` when
+  signed in). Older `v1` / `v2` / `v3` keys auto-migrate on first load.

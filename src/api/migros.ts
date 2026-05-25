@@ -115,6 +115,9 @@ function migrosToHit(p: MigrosResponse): FoodHit | null {
     proteinPer100: round(nutrient(rows, /^(protein|eiwei|prot[eé]ines|proteine)/i)),
     carbsPer100: round(nutrient(rows, /^(carbohydrate|kohlenhydrat|glucides|carboidrati)/i)),
     fatPer100: round(nutrient(rows, /^(fat\b|fett\b|mati[eè]res grasses|lipidi|grassi)/i)),
+    fibrePer100: round(nutrient(rows, /^(fibre|fiber|ballaststoffe|fibres|fibra)/i)),
+    sugarPer100: round(subNutrient(rows, /(sugar|zucker|sucres|zuccheri)/i)),
+    saltPer100: round(nutrient(rows, /^(salt\b|salz\b|sel\b|sale\b)/i)),
     category: guessCategoryFromBreadcrumb(p.breadcrumb ?? []),
     unit: detectUnit(table?.headers?.[0] ?? ""),
   };
@@ -146,6 +149,20 @@ function nutrient(rows: MigrosNutrientRow[], pattern: RegExp): number {
     const label = (row.label ?? "").trim();
     if (!label) continue;
     if (/^(of which|davon|dont|di cui)\b/i.test(label)) continue;
+    if (pattern.test(label)) return firstNumber(row.values?.[0] ?? "");
+  }
+  return 0;
+}
+
+// Sugars appear as "of which sugars" / "davon Zucker" / "dont sucres" /
+// "di cui zuccheri" — i.e. the opposite of nutrient(): only the indented
+// sub-row matches. Same applies if Migros ever adds a "saturated fat"
+// breakout, but we don't track that today.
+function subNutrient(rows: MigrosNutrientRow[], pattern: RegExp): number {
+  for (const row of rows) {
+    const label = (row.label ?? "").trim();
+    if (!label) continue;
+    if (!/^(of which|davon|dont|di cui)\b/i.test(label)) continue;
     if (pattern.test(label)) return firstNumber(row.values?.[0] ?? "");
   }
   return 0;

@@ -75,6 +75,9 @@ interface Ingredient {
   proteinPer100: number;
   carbsPer100: number;
   fatPer100: number;
+  fibrePer100: number;        // grams; defaults to 0 on legacy ingredients
+  sugarPer100: number;        // grams; subset of carbs
+  saltPer100: number;         // grams (NaCl) — converted from sodium ×2.5
   category: IngredientCategory;
 }
 
@@ -117,7 +120,10 @@ interface AppState {
   meals: Meal[];
   slots: MealSlot[];          // ordered; renders week-grid rows top→bottom
   week: WeekPlan;
-  targets: { kcal: number; protein: number; carbs: number; fat: number };
+  targets: {
+    kcal: number; protein: number; carbs: number; fat: number;
+    fibre: number; sugar: number; salt: number;
+  };
   shoppingChecked: string[];
   profile: UserProfile;
   theme: ThemePref;           // persisted; applied on boot by theme.ts
@@ -129,7 +135,7 @@ older saves keep working. Slots are editable from Settings.
 
 **Derived (computed, not stored):**
 
-- `mealNutrition(meal)` → `{ kcal, protein, carbs, fat }` per serving
+- `mealNutrition(meal)` → `{ kcal, protein, carbs, fat, fibre, sugar, salt }` per serving
 - `dayTotals(day)` → sum of meal-per-serving nutrition for filled slots
 - `shoppingList(week)` → ingredients aggregated across the week’s meals, grouped by category
 
@@ -214,11 +220,12 @@ configured.)
   to create accounts either.
 - **Per-user data**: Firestore at `/users/{uid}/state/main` holds the
   whole `AppState` as a single document.
-- **Cache**: localStorage at `mealprep:v3:{uid}` for signed-in users,
-  `mealprep:v3` while signed out. The signed-out scope migrates into
+- **Cache**: localStorage at `mealprep:v4:{uid}` for signed-in users,
+  `mealprep:v4` while signed out. The signed-out scope migrates into
   the per-uid scope on first sign-in (with a reconcile prompt if the
-  cloud has different data). Older `mealprep:v1` / `mealprep:v2` keys
-  are auto-migrated on first read.
+  cloud has different data). Older `v1` / `v2` / `v3` keys are
+  auto-migrated on first read (v3 → v4 back-fills missing per-100
+  fibre / sugar / salt to `0`).
 - **Live sync**: `onSnapshot` keeps multiple devices in sync. Local
   saves debounce up to Firestore; remote updates re-seed the store.
 - **Sharing**: top-level Firestore collections `shared_ingredients`,
@@ -238,8 +245,8 @@ configured.)
   `lastPushed` JSON cache to avoid echoing remote updates back)
 - On load: if key missing, initialise with default state — empty
   library, three default slots (`bridge` / `lunch` / `dinner`),
-  targets `{ kcal: 2050, protein: 140, carbs: 220, fat: 70 }`, theme
-  `"auto"`.
+  targets `{ kcal: 2050, protein: 140, carbs: 220, fat: 70, fibre: 30,
+  sugar: 50, salt: 6 }`, theme `"auto"`.
 
 ## Import / export
 
@@ -287,8 +294,8 @@ not JSON import.
   `prefers-color-scheme` when theme is `"auto"`). Switching is
   persisted per user.
 - Asymmetric per-macro status thresholds (kcal ±5 %, protein under-
-  only, carbs ±15 %, fat over-only) — only flag what actually
-  matters.
+  only, carbs ±15 %, fat over-only; fibre under-only, sugar over-only,
+  salt over-only) — only flag what actually matters.
 - Keyboard-friendly: tab through inputs, Enter to confirm.
 - No flash of unstyled content; render skeleton until state loads.
 - Confirm before destructive actions (delete, reset, unshare,
