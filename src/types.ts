@@ -29,11 +29,23 @@ export interface Ingredient {
   sugarPer100: number;
   saltPer100: number;
   category: IngredientCategory;
+  // Grams per millilitre. Only meaningful for `g`/`ml` ingredients;
+  // optional everywhere so old saves keep working (consumers default
+  // to 1). Used to convert when a meal-line measures the same
+  // ingredient in the other unit (water-equivalent ≈ 1; olive oil
+  // ≈ 0.92; honey ≈ 1.4).
+  densityGPerMl?: number;
 }
 
 export interface MealIngredient {
   ingredientId: string;
   amount: number;
+  // Optional unit override for the line. Only valid when the parent
+  // ingredient's unit is `g` or `ml`, and only when this differs from
+  // the parent unit — in which case the amount is converted to the
+  // parent unit via the ingredient's density. Omitted lines use the
+  // ingredient's native unit (the historical behaviour).
+  unit?: "g" | "ml";
 }
 
 export interface Meal {

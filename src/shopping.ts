@@ -1,5 +1,6 @@
 import type { AppState, IngredientCategory, Unit } from "./types";
 import { DAYS, INGREDIENT_CATEGORIES } from "./types";
+import { consumedNativeAmount } from "./nutrition";
 
 export interface ShoppingLine {
   ingredientId: string;
@@ -13,6 +14,7 @@ export type ShoppingGroups = { category: IngredientCategory; lines: ShoppingLine
 
 export function aggregateShopping(state: AppState): ShoppingGroups {
   const totals = new Map<string, number>();
+  const ingredientById = new Map(state.ingredients.map((i) => [i.id, i] as const));
   for (const { key: day } of DAYS) {
     for (const slot of state.slots) {
       const mealId = state.week[day][slot.id];
@@ -20,7 +22,11 @@ export function aggregateShopping(state: AppState): ShoppingGroups {
       const meal = state.meals.find((m) => m.id === mealId);
       if (!meal) continue;
       for (const mi of meal.ingredients) {
-        totals.set(mi.ingredientId, (totals.get(mi.ingredientId) ?? 0) + mi.amount);
+        const ing = ingredientById.get(mi.ingredientId);
+        // Aggregate in the ingredient's native unit so g/ml overrides
+        // collapse into one shopping line via density conversion.
+        const qty = ing ? consumedNativeAmount(ing, mi) : mi.amount;
+        totals.set(mi.ingredientId, (totals.get(mi.ingredientId) ?? 0) + qty);
       }
     }
   }

@@ -1,12 +1,15 @@
 import type { AppState, Ingredient, Meal, MealSlot, ThemePref, WeekPlan } from "./types";
 import { DAYS, DEFAULT_SLOTS } from "./types";
 
-// v4 added per-ingredient fibre / sugar / salt and matching targets. v3
-// widened `targets` from {kcal, protein} to all four macros and added the
-// `theme` preference. The normalise() function below back-fills missing
-// nutrient fields and targets for any older save it reads.
-const STORAGE_KEY = "mealprep:v4";
-const LEGACY_STORAGE_KEYS = ["mealprep:v3", "mealprep:v2", "mealprep:v1"];
+// v5 introduced per-ingredient `densityGPerMl` (default 1) and an
+// optional `unit` override on each meal-line so liquids/solids can be
+// measured in the other unit and converted via density. v4 added
+// per-ingredient fibre / sugar / salt and matching targets. v3 widened
+// `targets` from {kcal, protein} to all four macros and added the
+// `theme` preference. The normalise() function below back-fills
+// missing nutrient fields and targets for any older save it reads.
+const STORAGE_KEY = "mealprep:v5";
+const LEGACY_STORAGE_KEYS = ["mealprep:v4", "mealprep:v3", "mealprep:v2", "mealprep:v1"];
 const SAVE_DEBOUNCE_MS = 300;
 
 // localStorage key the app should currently read/write. Defaults to the
@@ -157,6 +160,8 @@ function stripLegacyMealFields(m: unknown): AppState["meals"][number] {
 
 // Pre-v4 ingredients had no fibre/sugar/salt. Default to 0 so aggregations
 // stay numeric — the user can refill the real values later.
+// Pre-v5 ingredients had no density; default to 1 (water-equivalent) so
+// g↔ml conversions stay sane until the user overrides for oils/syrups.
 function backfillIngredient(i: unknown): Ingredient {
   const ing = (i ?? {}) as Partial<Ingredient> & Record<string, unknown>;
   return {
@@ -164,12 +169,18 @@ function backfillIngredient(i: unknown): Ingredient {
     fibrePer100: numericField(ing.fibrePer100),
     sugarPer100: numericField(ing.sugarPer100),
     saltPer100: numericField(ing.saltPer100),
+    densityGPerMl: positiveNumericField(ing.densityGPerMl, 1),
   };
 }
 
 function numericField(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+function positiveNumericField(v: unknown, fallback: number): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 // Keep slot keys that exist in the slots list; drop keys that don't.
@@ -287,6 +298,7 @@ export function mergeImport(
       ingredients: m.ingredients.map((mi) => ({
         ingredientId: idMap.get(mi.ingredientId) ?? mi.ingredientId,
         amount: mi.amount,
+        ...(mi.unit === "g" || mi.unit === "ml" ? { unit: mi.unit } : {}),
       })),
     });
   }

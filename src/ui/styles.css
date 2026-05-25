@@ -707,13 +707,24 @@ main { padding-bottom: var(--mtabs-h); }
 }
 .ing-line .rm:hover { color: var(--accent-2); }
 .ing-line input[type="number"] {
-  width: 72px; margin: 0; padding: 4px 6px;
+  width: 96px; margin: 0; padding: 4px 6px;
   font-family: var(--font-mono); font-size: 12px;
 }
+.ing-line .unit-toggle {
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 2px 8px; line-height: 1.4;
+  border-radius: 6px;
+  min-width: 42px; text-align: center;
+  cursor: pointer;
+}
+.ing-line .unit-toggle:hover { color: var(--accent); border-color: var(--accent); }
 
 .add-ing-row { display: flex; gap: 6px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
 .add-ing-row select { flex: 1 1 160px; margin: 0; }
-.add-ing-row input  { flex: 0 0 80px; margin: 0; }
+.add-ing-row input  { flex: 1 1 130px; min-width: 110px; margin: 0; }
 
 /* =====================================================================
  * Ingredients — scan CTA + filter pills + rows + cat tags

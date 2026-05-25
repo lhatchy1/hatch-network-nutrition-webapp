@@ -42,11 +42,21 @@ interface Ingredient {
   sugarPer100: number;    // grams; subset of carbohydrate
   saltPer100: number;     // grams; not sodium — multiply sodium by 2.5
   category: IngredientCategory;
+  densityGPerMl?: number; // grams per ml; only meaningful for "g"/"ml";
+                          // optional, defaults to 1 (water). Use ~0.92 for
+                          // oils, ~1.4 for honey, etc. Used to convert
+                          // when a meal-line measures the ingredient in
+                          // the other unit.
 }
 
 interface MealIngredient {
   ingredientId: string;   // MUST match an Ingredient.id above
-  amount: number;         // in the ingredient's unit (g, ml, or count)
+  amount: number;         // in `unit` below (or the ingredient's native
+                          // unit when `unit` is omitted)
+  unit?: "g" | "ml";      // optional override; only valid when the parent
+                          // ingredient is a "g"/"ml" type. When set and
+                          // different from the ingredient's unit, the
+                          // amount is converted via density.
 }
 
 interface Meal {
@@ -77,6 +87,11 @@ interface ImportPayload {
   produced before v4. Missing fields back-fill to `0` on import, so old
   exports still load — but the four-macro view will be the only useful
   signal until you refill the values.
+- `densityGPerMl` is optional and defaults to `1` (water-equivalent).
+  Only set it when you actually know the density — e.g. olive oil
+  ≈ 0.92, honey ≈ 1.4, ethanol ≈ 0.79. It only does anything when a
+  meal-line carries a `unit` override that differs from the ingredient's
+  native unit.
 
 ## Minimal valid example
 
@@ -128,5 +143,5 @@ match-by-name against your existing library.
   profile), but the importer only reads the `ingredients` and `meals`
   arrays. Use export for backups; use import for seeding new content.
 - Exported filename: `mealprep-YYYY-MM-DD.json`.
-- `localStorage` key: `mealprep:v4` (or `mealprep:v4:{uid}` when
-  signed in). Older `v1` / `v2` / `v3` keys auto-migrate on first load.
+- `localStorage` key: `mealprep:v5` (or `mealprep:v5:{uid}` when
+  signed in). Older `v1` … `v4` keys auto-migrate on first load.

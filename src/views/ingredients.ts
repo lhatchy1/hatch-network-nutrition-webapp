@@ -167,6 +167,8 @@ function renderRow(r: Ingredient): string {
 }
 
 function renderEditCard(r: Ingredient): string {
+  const showDensity = r.unit === "g" || r.unit === "ml";
+  const density = r.densityGPerMl ?? 1;
   return `<div class="ingr-edit" data-edit-row="${esc(r.id)}">
     <label>Name <input name="name" value="${esc(r.name)}" /></label>
     <div class="grid" style="margin-top: 10px;">
@@ -189,6 +191,14 @@ function renderEditCard(r: Ingredient): string {
       <label>Fibre g <input name="fibre" type="number" step="any" value="${r.fibrePer100 ?? 0}" /></label>
       <label>Sugar g <input name="sugar" type="number" step="any" value="${r.sugarPer100 ?? 0}" /></label>
       <label>Salt g <input name="salt" type="number" step="any" value="${r.saltPer100 ?? 0}" /></label>
+      ${
+        showDensity
+          ? `<label title="Used to convert when a meal-line measures this ingredient in the other unit. 1 = water (default). Oils ≈ 0.92, honey ≈ 1.4.">
+              Density g/ml
+              <input name="density" type="number" step="any" min="0" value="${density}" />
+            </label>`
+          : ""
+      }
     </div>
     <div class="actions">
       <button class="btn primary" data-save="${esc(r.id)}">Save</button>
@@ -283,6 +293,13 @@ function wire(root: HTMLElement): void {
       if (!row) return;
       const get = (n: string) =>
         (row.querySelector(`[name="${n}"]`) as HTMLInputElement | HTMLSelectElement).value;
+      const getOpt = (n: string) => {
+        const el = row.querySelector(`[name="${n}"]`) as
+          | HTMLInputElement
+          | HTMLSelectElement
+          | null;
+        return el?.value;
+      };
       const ing = store.ingredients.find((i) => i.id === id);
       if (!ing) return;
       const name = get("name").trim();
@@ -300,6 +317,14 @@ function wire(root: HTMLElement): void {
       ing.sugarPer100 = Number(get("sugar")) || 0;
       ing.saltPer100 = Number(get("salt")) || 0;
       ing.category = get("category") as IngredientCategory;
+      // Density only meaningful for g/ml ingredients; for "unit" we
+      // drop the field to keep saves clean.
+      if (ing.unit === "g" || ing.unit === "ml") {
+        const raw = Number(getOpt("density"));
+        ing.densityGPerMl = Number.isFinite(raw) && raw > 0 ? raw : 1;
+      } else {
+        delete ing.densityGPerMl;
+      }
       view.editingId = null;
       renderIngredients(root);
     });
